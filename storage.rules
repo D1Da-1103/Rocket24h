@@ -1,0 +1,51 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    function isUnder5MB() {
+      return request.resource.size <= 5 * 1024 * 1024;
+    }
+
+    // Spot photos: spots/{authorUid}/{spotId}/{filename}
+    match /spots/{authorUid}/{spotId}/{filename} {
+      // Author can always read their own photos
+      // Other authenticated users can only read if spot is public or friends
+      allow read: if isAuthenticated() && (
+        request.auth.uid == authorUid ||
+        (
+          firestore.exists(/databases/(default)/documents/spots/$(spotId)) &&
+          (
+            firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'public' ||
+            (
+              firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'friends' &&
+              firestore.exists(/databases/(default)/documents/users/$(authorUid)/friends/$(request.auth.uid))
+            )
+          )
+        )
+      );
+
+      // Only author can upload with valid image constraints
+      allow write: if isAuthenticated()
+                   && request.auth.uid == authorUid
+                   && isImage()
+                   && isUnder5MB();
+    }
+
+    // Avatar photos: avatars/{uid}/{filename}
+    match /avatars/{uid}/{filename} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+                   && request.auth.uid == uid
+                   && isImage()
+                   && isUnder5MB();
+    }
+  }
+}

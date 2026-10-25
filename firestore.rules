@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isFriend(targetUserId) {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(targetUserId)/friends/$(request.auth.uid));
+    }
+
+    // Users public profile
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId)
+                    && request.resource.data.keys().hasAll(['displayName', 'createdAt'])
+                    && request.resource.data.displayName is string
+                    && request.resource.data.displayName.size() >= 2
+                    && request.resource.data.displayName.size() <= 60;
+      allow update: if isOwner(userId)
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt']));
+      allow delete: if false;
+
+      // Subcollection: privatePlaces (Chỉ chủ sở hữu đọc/ghi)
+      match /privatePlaces/{placeId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subcollection: spotLocations (Chỉ chủ sở hữu đọc/ghi)
+      match /spotLocations/{spotId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subcollection: friends lookup table (CHỈ server / Admin SDK ghi)
+      match /friends/{friendUid} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      // Subcollection: savedPlaces (Chỉ chủ sở hữu đọc/ghi)
+      match /savedPlaces/{key} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subcollection: notifications (Chỉ người nhận đọc, chỉ đổi isRead, client không tạo)
+      match /notifications/{notifId} {
+        allow read: if isOwner(userId);
+        allow update: if isOwner(userId)
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+                      && request.resource.data.isRead is bool;
+        allow create, delete: if false;
+      }
+
+      // Subcollection: pushDevices
+      match /pushDevices/{deviceId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // User Settings (Chỉ chủ sở hữu)
+    match /userSettings/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Shared Places
+    match /places/{placeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+                    && request.resource.data.keys().hasAll(['name', 'nameNormalized', 'category', 'address', 'latitude', 'longitude', 'geohash', 'createdBy', 'createdAt'])
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() >= 2
+                    && request.resource.data.name.size() <= 120
+                    && request.resource.data.latitude is number
+                    && request.resource.data.latitude >= -90.0
+                    && request.resource.data.latitude <= 90.0
+                    && request.resource.data.longitude is number
+                    && request.resource.data.longitude >= -180.0
+                    && request.resource.data.longitude <= 180.0
+                    && request.resource.data.geohash is string;
+      allow update: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Spots (Trải nghiệm)
+    match /spots/{spotId} {
+      // Quyền đọc theo Ma trận Mục 3
+      allow read: if isAuthenticated() && (
+        resource.data.authorId == request.auth.uid ||
+        resource.data.visibility == 'public' ||
+        (resource.data.visibility == 'friends' && isFriend(resource.data.authorId))
+      );
+
+      // Tạo Spot
+      allow create: if isAuthenticated()
+                    && request.resource.data.authorId == request.auth.uid
+                    && request.resource.data.visibility in ['public', 'friends', 'private']
+                    && request.resource.data.locationMode in ['exact', 'hidden']
+                    && (request.resource.data.locationMode != 'hidden' || request.resource.data.placeId == null)
+                    && request.resource.data.imagePaths is list
+                    && request.resource.data.imagePaths.size() >= 1
+                    && request.resource.data.imagePaths.size() <= 5
+                    && request.resource.data.caption is string
+                    && request.resource.data.caption.size() <= 1000
+                    && (request.resource.data.rating == null || (request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5))
+                    && (request.resource.data.priceVnd == null || (request.resource.data.priceVnd is int && request.resource.data.priceVnd >= 0));
+
+      // Sửa Spot (Chỉ tác giả)
+      allow update: if isAuthenticated()
+                    && resource.data.authorId == request.auth.uid
+                    && request.resource.data.authorId == resource.data.authorId
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.visibility in ['public', 'friends', 'private']
+                    && request.resource.data.locationMode in ['exact', 'hidden']
+                    && (request.resource.data.locationMode != 'hidden' || request.resource.data.placeId == null)
+                    && request.resource.data.caption is string
+                    && request.resource.data.caption.size() <= 1000
+                    && (request.resource.data.rating == null || (request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5))
+                    && (request.resource.data.priceVnd == null || (request.resource.data.priceVnd is int && request.resource.data.priceVnd >= 0));
+
+      // Xóa Spot (Chỉ tác giả)
+      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+
+      // Subcollection: likes
+      match /likes/{userId} {
+        allow read: if isAuthenticated();
+        allow create, delete: if isOwner(userId);
+      }
+    }
+
+    // Friendships (Giao dịch tạo/sửa do server Route Handler quản lý; client chỉ đọc bản ghi liên quan)
+    match /friendships/{pairId} {
+      allow read: if isAuthenticated() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+      // Ghi qua Server Route Handler (Admin SDK)
+      allow write: if false;
+    }
+
+    // Media metadata
+    match /media/{mediaId} {
+      allow read, write: if isAuthenticated() && (
+        resource == null || resource.data.ownerId == request.auth.uid
+      );
+    }
+  }
+}
