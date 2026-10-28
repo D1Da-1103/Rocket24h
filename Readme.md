@@ -67,13 +67,25 @@ Lệnh này sẽ tự động tạo:
 - **3 người dùng mẫu** có hồ sơ và cài đặt đầy đủ.
 - **Quan hệ bạn bè mẫu** giữa Alice và Bob.
 - **10 địa điểm nổi tiếng** tại khu vực trung tâm Hà Nội kèm Geohash chuẩn WGS84.
-- **15 bài viết Spot mẫu** trải đều các phạm vi `public`, `friends`, `private` và chế độ ẩn vị trí.
+- **10 bài viết Spot mẫu** trải đều các phạm vi `public`, `friends`, `private` và chế độ ẩn vị trí.
 
 ### Bước 5: Chạy ứng dụng giao diện Next.js
 ```bash
 npm run dev
 ```
 Truy cập ứng dụng tại: [http://localhost:3000](http://localhost:3000)
+
+### Dọn media tạm
+
+Khi một lần tạo Spot bị gián đoạn sau khi upload ảnh, media có trạng thái `temp` hoặc
+`orphan` có thể được dọn an toàn bằng:
+
+```bash
+npm run cleanup:media
+```
+
+Lệnh chỉ xóa media tạm/orphan cũ hơn 24 giờ (có thể đổi bằng biến
+`MEDIA_CLEANUP_AGE_HOURS`) và có thể chạy lặp lại.
 
 ---
 

@@ -117,6 +117,7 @@ export interface MediaRecord {
   spotId: string;
   objectPath: string;
   status: 'temp' | 'attached' | 'orphan';
+  createdAt?: TimestampLike;
 }
 
 export interface PlaceCategory {

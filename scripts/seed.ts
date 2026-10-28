@@ -36,7 +36,14 @@ async function seed() {
         password: 'Password123!',
       });
       console.log(`  ✓ Tạo Auth User: ${u.email} (${u.uid})`);
-    } catch {
+    } catch (error: unknown) {
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? error.code
+          : undefined;
+      if (code !== 'auth/uid-already-exists') {
+        throw error;
+      }
       console.log(`  ℹ Auth User ${u.email} đã tồn tại`);
     }
 

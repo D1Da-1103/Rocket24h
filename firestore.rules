@@ -117,7 +117,7 @@ service cloud.firestore {
           && request.resource.data.hasVisited is bool
           && request.resource.data.isBookmarked is bool
           && (request.resource.data.hasVisited == true || request.resource.data.isBookmarked == true)
-          && isTimestampOrNull(request.resource.data.lastVisitedAt);
+          && isTimestampOrNull(request.resource.data.get('lastVisitedAt', null));
         allow update: if isOwner(userId)
           && request.resource.data.keys().hasOnly([
             'placeScope', 'placeId', 'hasVisited', 'isBookmarked', 'lastVisitedAt'
@@ -126,7 +126,7 @@ service cloud.firestore {
           && request.resource.data.placeId == resource.data.placeId
           && request.resource.data.hasVisited is bool
           && request.resource.data.isBookmarked is bool
-          && isTimestampOrNull(request.resource.data.lastVisitedAt);
+          && isTimestampOrNull(request.resource.data.get('lastVisitedAt', null));
         // Chỉ xóa bản ghi không còn lịch sử ghé; xóa lần ghé cuối do server tính lại.
         allow delete: if isOwner(userId) && resource.data.hasVisited == false;
       }
@@ -212,8 +212,8 @@ service cloud.firestore {
           'createdAt', 'updatedAt', 'status'
         ])
         && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
+        && request.resource.data.get('createdAt', null) == request.time
+        && request.resource.data.get('updatedAt', null) == request.time
         && request.resource.data.locationMode in ['exact', 'hidden']
         && (
           (request.resource.data.locationMode == 'hidden' && request.resource.data.placeId == null) ||
@@ -235,8 +235,8 @@ service cloud.firestore {
         && request.resource.data.caption is string
         && request.resource.data.caption.size() <= 1000
         && request.resource.data.visibility in ['public', 'friends', 'private']
-        && request.resource.data.visitedAt is timestamp
-        && (!('status' in request.resource.data) || request.resource.data.status == 'active');
+        && request.resource.data.get('visitedAt', null) is timestamp
+        && request.resource.data.get('status', 'active') == 'active';
 
       // Chỉ tác giả được đổi visibility; mọi trường còn lại bất biến.
       // created/updated dùng serverTimestamp nên updatedAt == request.time.
@@ -248,7 +248,7 @@ service cloud.firestore {
           'createdAt', 'updatedAt', 'status'
         ])
         && request.resource.data.authorId == resource.data.authorId
-        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
         && request.resource.data.placeId == resource.data.placeId
         && request.resource.data.locationMode == resource.data.locationMode
         && request.resource.data.imagePaths == resource.data.imagePaths
@@ -256,13 +256,12 @@ service cloud.firestore {
         && request.resource.data.priceVnd == resource.data.priceVnd
         && request.resource.data.rating == resource.data.rating
         && request.resource.data.caption == resource.data.caption
-        && request.resource.data.visitedAt == resource.data.visitedAt
+        && request.resource.data.get('visitedAt', null) == resource.data.get('visitedAt', null)
         && (
-          ('status' in resource.data && request.resource.data.status == resource.data.status) ||
-          (!('status' in resource.data) && !('status' in request.resource.data))
+          request.resource.data.get('status', null) == resource.data.get('status', null)
         )
         && request.resource.data.visibility in ['public', 'friends', 'private']
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.get('updatedAt', null) == request.time;
 
       // Xóa Spot đi qua Route Handler để dọn likes/ảnh/liên kết và tính lại hasVisited.
       allow delete: if false;
@@ -293,20 +292,25 @@ service cloud.firestore {
     match /media/{mediaId} {
       allow read: if isOwner(resource.data.ownerId);
       allow create: if isAuthenticated()
-        && request.resource.data.keys().hasOnly(['ownerId', 'spotId', 'objectPath', 'status'])
+        && request.resource.data.keys().hasOnly(['ownerId', 'spotId', 'objectPath', 'status', 'createdAt'])
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.spotId is string
         && request.resource.data.objectPath is string
         && request.resource.data.objectPath.matches(
              'spots/' + request.auth.uid + '/' + request.resource.data.spotId + '/.*'
            )
-        && request.resource.data.status in ['temp', 'attached', 'orphan'];
+        && request.resource.data.status in ['temp', 'attached', 'orphan']
+        && (request.resource.data.get('createdAt', null) == null ||
+            request.resource.data.get('createdAt', null) is timestamp);
       allow update: if isOwner(resource.data.ownerId)
-        && request.resource.data.keys().hasOnly(['ownerId', 'spotId', 'objectPath', 'status'])
+        && request.resource.data.keys().hasOnly(['ownerId', 'spotId', 'objectPath', 'status', 'createdAt'])
         && request.resource.data.ownerId == resource.data.ownerId
         && request.resource.data.spotId == resource.data.spotId
         && request.resource.data.objectPath == resource.data.objectPath
-        && request.resource.data.status in ['temp', 'attached', 'orphan'];
+        && request.resource.data.status in ['temp', 'attached', 'orphan']
+        && (request.resource.data.get('createdAt', null) == null ||
+            request.resource.data.get('createdAt', null) is timestamp)
+        && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null);
       allow delete: if isOwner(resource.data.ownerId);
     }
   }

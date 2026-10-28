@@ -138,6 +138,7 @@ export async function createSpot(
           spotId,
           objectPath,
           status: 'attached',
+          createdAt: serverTimestamp(),
         });
       });
     });

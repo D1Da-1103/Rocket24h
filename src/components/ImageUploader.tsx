@@ -60,9 +60,12 @@ export default function ImageUploader({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" aria-busy={processing}>
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-sm text-red-700">
+        <div
+          className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-sm text-red-700"
+          role="alert"
+        >
           <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-500" />
           <span>{error}</span>
         </div>
@@ -84,8 +87,9 @@ export default function ImageUploader({
               <button
                 type="button"
                 onClick={() => handleRemove(idx)}
-                className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center hover:bg-red-700 transition-colors shadow-md"
+                className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 transition-colors shadow-md"
                 title="Xóa ảnh này"
+                aria-label={`Xóa ảnh ${idx + 1}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -112,6 +116,7 @@ export default function ImageUploader({
               multiple
               onChange={(e) => handleFiles(e.target.files)}
               className="hidden"
+              disabled={processing}
             />
             {processing ? (
               <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
@@ -134,6 +139,9 @@ export default function ImageUploader({
         <ImageIcon className="w-3.5 h-3.5 text-stone-500" />
         <span>Ảnh tự động được loại bỏ tọa độ GPS và thông tin thiết bị (EXIF) trước khi tải lên.</span>
       </div>
+      <p className="sr-only" aria-live="polite">
+        {processing ? 'Đang xử lý ảnh...' : `${images.length} trên ${maxCount} ảnh đã chọn`}
+      </p>
     </div>
   );
 }

@@ -42,7 +42,17 @@ Tài liệu này ghi lại các quyết định thiết kế kiến trúc, lựa
 
 ---
 
-## 2. Các quyết định thiết kế nghiệp vụ & bảo mật dữ liệu
+  ## 2.1. Quyết định Giai đoạn 3: cleanup media tạm
+
+  - Script `npm run cleanup:media` dùng Admin SDK và chạy được trên Emulator hoặc Firebase thật
+    tùy biến môi trường.
+  - Chỉ xóa bản ghi `media` có trạng thái `temp` hoặc `orphan` và cũ hơn 24 giờ; bản ghi thiếu
+    `createdAt` được xem là legacy tạm và đủ điều kiện dọn.
+  - Xóa Storage object trước rồi mới xóa bản ghi Firestore. Nếu xóa Storage thất bại, bản ghi
+    vẫn giữ nguyên để lần chạy sau thử lại, tránh mất dấu media.
+  - Mỗi lần chạy giới hạn 500 bản ghi, in tóm tắt JSON và có thể chạy lặp lại an toàn.
+
+  ## 2. Các quyết định thiết kế nghiệp vụ & bảo mật dữ liệu
 
 ### D01: Tách biệt cấp tài liệu cho chế độ vị trí ẩn (`locationMode: 'hidden'`)
 - **Vấn đề**: Người dùng muốn chia sẻ cảm nghĩ, ảnh món ăn nhưng muốn giấu vị trí chính xác (quán gần nhà, địa điểm bí mật).

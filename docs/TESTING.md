@@ -123,4 +123,15 @@ Chạy bằng `npm run test:rules` (khởi động Firestore Emulator). File tes
 | ESLint Next.js | `npm run lint` | **PASS (0 errors)** | 12 warning không chặn build (`<img>`, gợi ý `exhaustive-deps`) |
 | Production Build | `npm run build` | **PASS (0 errors)** | Biên dịch và Prerender thành công toàn bộ 16 route |
 | Unit Tests | `npm test` | **PASS (38/38)** | 5 file, phủ logic Giai đoạn 1 & 2 |
-| Rules Tests | `npm run test:rules` | **Chưa chạy được cục bộ** | Cần JDK 21+ (xem ghi chú trên) |
+| Rules Tests | `npx vitest run tests/rules` | **PASS (21/21)** | Đã dùng `Map.get()` cho các field tùy chọn để tránh evaluation error khi request thiếu field |
+
+### C. Giai đoạn 3 - Media và khả năng vận hành
+
+- `npm run seed`: **PASS** khi chạy độc lập; script tự nạp `.env.local` và kết nối Emulator.
+- `npm run cleanup:media`: **PASS**; lần chạy kiểm chứng quét 0 bản ghi và trả JSON tóm tắt.
+- Upload ảnh: **đã có** kiểm tra MIME/dung lượng, resize tối đa 1920px, bỏ EXIF qua Canvas,
+  xem trước, xóa ảnh, trạng thái đang xử lý và thông báo lỗi trợ năng.
+- Cleanup chỉ xử lý media `temp`/`orphan` cũ hơn 24 giờ, bỏ qua media mới và có thể chạy lặp lại.
+
+Các cảnh báo ESLint hiện còn là cảnh báo không chặn build về `<img>` và dependency của
+React Hook; chưa có lỗi lint mới do Giai đoạn 3.
