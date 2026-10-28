@@ -30,6 +30,8 @@ export default function LoginPage() {
       const msg = err instanceof Error ? err.message : 'Đăng nhập không thành công';
       if (msg.includes('user-not-found') || msg.includes('wrong-password') || msg.includes('invalid-credential')) {
         setError('Email hoặc mật khẩu không chính xác');
+      } else if (msg.includes('auth/network-request-failed')) {
+        setError('Không kết nối được Firebase. Nếu chạy local, hãy mở Firebase Emulator bằng lệnh: npm run emulators');
       } else {
         setError(`Lỗi đăng nhập: ${msg}`);
       }

@@ -3,8 +3,8 @@ import { getAuth, Auth } from 'firebase-admin/auth';
 import { getFirestore, Firestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getStorage, Storage } from 'firebase-admin/storage';
 
-// Thiết lập biến môi trường Emulator cho Firebase Admin nếu đang ở dev
-if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true') {
+// Chỉ dùng Emulator khi được bật tường minh bằng biến môi trường.
+if (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true') {
   process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';
   process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || 'localhost:9099';
   process.env.FIREBASE_STORAGE_EMULATOR_HOST = process.env.FIREBASE_STORAGE_EMULATOR_HOST || 'localhost:9199';

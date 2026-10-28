@@ -19,11 +19,11 @@ const auth: Auth = getAuth(app);
 const db: Firestore = getFirestore(app);
 const storage: FirebaseStorage = getStorage(app);
 
-// Kết nối Emulator nếu bật cờ giả lập hoặc trong môi trường dev
+// Chỉ kết nối Emulator khi được bật tường minh bằng biến môi trường.
 let emulatorsConnected = false;
 
 if (typeof window !== 'undefined' && !emulatorsConnected) {
-  const useEmulator = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true' || process.env.NODE_ENV === 'development';
+  const useEmulator = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
 
   if (useEmulator) {
     try {
