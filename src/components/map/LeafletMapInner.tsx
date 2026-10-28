@@ -17,6 +17,15 @@ export interface MapMarkerItem {
   onClick?: () => void;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 interface LeafletMapInnerProps {
   center: [number, number];
   zoom?: number;
@@ -191,11 +200,11 @@ export default function LeafletMapInner({
 
       const popupContent = `
         <div style="font-family: inherit; padding: 4px;">
-          <h4 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #1e293b;">${item.name}</h4>
-          ${item.address ? `<p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b;">${item.address}</p>` : ''}
+          <h4 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #1e293b;">${escapeHtml(item.name)}</h4>
+          ${item.address ? `<p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b;">${escapeHtml(item.address)}</p>` : ''}
           <div style="display: flex; gap: 4px; align-items: center;">
             <span style="font-size: 11px; padding: 2px 6px; background: #f1f5f9; border-radius: 4px; color: #475569;">
-              ${item.category || 'Địa điểm'}
+              ${escapeHtml(item.category || 'Địa điểm')}
             </span>
             ${isPriv ? '<span style="font-size: 11px; padding: 2px 6px; background: #e0e7ff; color: #4338ca; border-radius: 4px;">Riêng tư</span>' : ''}
           </div>

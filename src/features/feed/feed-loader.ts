@@ -1,16 +1,19 @@
 import {
   collection,
-  query,
-  where,
-  orderBy,
-  limit,
+  documentId,
   getDocs,
+  limit,
+  orderBy,
+  query,
+  startAfter,
+  where,
   DocumentSnapshot,
-  doc,
-  getDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Spot, Place } from '@/lib/domain/types';
+import { mergeUniqueSorted, takePage } from '@/lib/domain/feed-merge';
+import { fetchProfilesByUids } from '@/lib/data/users';
+import { fetchLikeSummaries } from '@/lib/data/likes';
 
 export interface FeedItem {
   spot: Spot;
@@ -19,152 +22,247 @@ export interface FeedItem {
     displayName: string;
     avatarPath: string | null;
   };
+  likeCount: number;
+  likedByViewer: boolean;
 }
 
-export interface MultiSourceFeedResult {
-  items: FeedItem[];
-  cursors: Map<string, DocumentSnapshot>;
-  hasMore: boolean;
+export interface FeedSourceState {
+  uid: string;
+  isSelf: boolean;
+  cursor: DocumentSnapshot | null;
+  exhausted: boolean;
+  buffer: Spot[];
+  error: string | null;
 }
 
 /**
- * Tải Feed phân trang theo đúng quy tắc bảo mật của Section 8:
- * - Không tải toàn bộ collection rồi lọc ở client
- * - Truy vấn ràng buộc theo quyền (spots của chính mình + spots của bạn bè có visibility in ['public', 'friends'])
- * - Gộp kết quả theo createdAt desc và loại trùng
+ * Trạng thái phân trang giữ một con trỏ riêng cho mỗi nguồn (bản thân + từng bạn).
+ * Không tải cả collection, không lọc toàn bộ ở trình duyệt.
  */
-export async function loadFeedPage(
+export interface FeedPagerState {
+  myUid: string;
+  pageSize: number;
+  sources: FeedSourceState[];
+}
+
+export interface FeedPageResult {
+  items: FeedItem[];
+  state: FeedPagerState;
+  hasMore: boolean;
+  isPartial: boolean;
+  errors: string[];
+}
+
+export function createFeedPagerState(
   myUid: string,
   friendUids: string[],
-  pageSize: number = 20
-): Promise<FeedItem[]> {
-  const sources = [myUid, ...friendUids];
-  const allSpots: Spot[] = [];
-  const placeCache = new Map<string, Place | null>();
-  const userProfileCache = new Map<string, { displayName: string; avatarPath: string | null }>();
+  pageSize: number
+): FeedPagerState {
+  const uids = Array.from(new Set([myUid, ...friendUids.filter((uid) => uid !== myUid)]));
+  return {
+    myUid,
+    pageSize,
+    sources: uids.map((uid) => ({
+      uid,
+      isSelf: uid === myUid,
+      cursor: null,
+      exhausted: false,
+      buffer: [],
+      error: null,
+    })),
+  };
+}
 
-  // Truy vấn song song cho từng nguồn
-  const promises = sources.map(async (uid) => {
+function mapSpot(snap: DocumentSnapshot): Spot {
+  return { id: snap.id, ...snap.data() } as Spot;
+}
+
+async function fetchSourcePage(
+  source: FeedSourceState,
+  pageSize: number
+): Promise<Spot[]> {
+  const constraints = source.isSelf
+    ? [
+        where('authorId', '==', source.uid),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize),
+      ]
+    : [
+        where('authorId', '==', source.uid),
+        where('visibility', 'in', ['public', 'friends']),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize),
+      ];
+
+  const base = query(collection(db, 'spots'), ...constraints);
+  const q = source.cursor
+    ? query(collection(db, 'spots'), ...constraints, startAfter(source.cursor))
+    : base;
+
+  const snap = await getDocs(q);
+  const spots = snap.docs.map(mapSpot);
+  source.cursor = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : source.cursor;
+  source.exhausted = snap.docs.length < pageSize;
+  return spots;
+}
+
+async function loadPlacesForPage(
+  spots: Spot[],
+  myUid: string
+): Promise<Map<string, Place>> {
+  const sharedIds = Array.from(
+    new Set(
+      spots
+        .filter((s) => s.placeId && s.locationMode !== 'hidden')
+        .map((s) => s.placeId as string)
+    )
+  );
+
+  const result = new Map<string, Place>();
+
+  for (let i = 0; i < sharedIds.length; i += 10) {
+    const chunk = sharedIds.slice(i, i + 10);
+    if (chunk.length === 0) continue;
     try {
-      let q;
-      if (uid === myUid) {
-        // Của chính mình: lấy tất cả các phạm vi
-        q = query(
-          collection(db, 'spots'),
-          where('authorId', '==', myUid),
-          orderBy('createdAt', 'desc'),
-          limit(pageSize)
-        );
-      } else {
-        // Của bạn bè: chỉ lấy public hoặc friends
-        q = query(
-          collection(db, 'spots'),
-          where('authorId', '==', uid),
-          where('visibility', 'in', ['public', 'friends']),
-          orderBy('createdAt', 'desc'),
-          limit(pageSize)
-        );
-      }
-
-      const snap = await getDocs(q);
-      const spotsForSource: Spot[] = [];
+      const snap = await getDocs(
+        query(collection(db, 'places'), where(documentId(), 'in', chunk))
+      );
       snap.forEach((d) => {
-        spotsForSource.push({ id: d.id, ...d.data() } as Spot);
+        const data = d.data();
+        result.set(d.id, {
+          id: d.id,
+          name: data.name,
+          nameNormalized: data.nameNormalized,
+          category: data.category,
+          address: data.address,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          geohash: data.geohash,
+          createdBy: data.createdBy,
+          createdAt: data.createdAt,
+          isPrivate: false,
+        });
       });
-      return spotsForSource;
-    } catch (err) {
-      console.warn(`Lỗi khi tải feed từ nguồn ${uid}:`, err);
-      return [];
-    }
-  });
-
-  const results = await Promise.all(promises);
-  results.forEach((list) => allSpots.push(...list));
-
-  // Loại trùng và sắp xếp giảm dần theo createdAt
-  const uniqueMap = new Map<string, Spot>();
-  for (const s of allSpots) {
-    if (!uniqueMap.has(s.id)) {
-      uniqueMap.set(s.id, s);
+    } catch (error) {
+      console.warn('Không tải được thông tin Place cho feed:', error);
     }
   }
 
-  const sortedSpots = Array.from(uniqueMap.values());
-  sortedSpots.sort((a, b) => {
-    const getTimeSeconds = (t: unknown): number => {
-      if (!t) return 0;
-      if (typeof t === 'object' && t !== null && 'seconds' in t) {
-        return (t as { seconds: number }).seconds || 0;
-      }
-      if (t instanceof Date) return t.getTime() / 1000;
-      if (typeof t === 'string' || typeof t === 'number') return new Date(t).getTime() / 1000;
-      return 0;
-    };
-    return getTimeSeconds(b.createdAt) - getTimeSeconds(a.createdAt);
-  });
+  // Spot của chính mình có thể tham chiếu Place riêng tư (không nằm trong places/)
+  const ownPrivateIds = Array.from(
+    new Set(
+      spots
+        .filter(
+          (s) =>
+            s.authorId === myUid &&
+            s.placeId &&
+            s.locationMode !== 'hidden' &&
+            !result.has(s.placeId)
+        )
+        .map((s) => s.placeId as string)
+    )
+  );
 
-  const slicedSpots = sortedSpots.slice(0, pageSize);
-
-  // Tải thông tin Place và tác giả kèm theo
-  const feedItems: FeedItem[] = [];
-
-  for (const spot of slicedSpots) {
-    let placeData: Place | null = null;
-
-    if (spot.placeId && spot.locationMode !== 'hidden') {
-      if (placeCache.has(spot.placeId)) {
-        placeData = placeCache.get(spot.placeId) || null;
-      } else {
-        try {
-          const placeSnap = await getDoc(doc(db, 'places', spot.placeId));
-          if (placeSnap.exists()) {
-            const pd = placeSnap.data();
-            placeData = {
-              id: placeSnap.id,
-              name: pd.name,
-              nameNormalized: pd.nameNormalized,
-              category: pd.category,
-              address: pd.address,
-              latitude: pd.latitude,
-              longitude: pd.longitude,
-              geohash: pd.geohash,
-              createdBy: pd.createdBy,
-              createdAt: pd.createdAt,
-            };
-          }
-          placeCache.set(spot.placeId, placeData);
-        } catch {
-          placeCache.set(spot.placeId, null);
-        }
-      }
-    }
-
-    // Tải profile người đăng
-    let authorProf = userProfileCache.get(spot.authorId);
-    if (!authorProf) {
+  await Promise.all(
+    ownPrivateIds.map(async (placeId) => {
       try {
-        const uSnap = await getDoc(doc(db, 'users', spot.authorId));
-        if (uSnap.exists()) {
-          const ud = uSnap.data();
-          authorProf = {
-            displayName: ud.displayName || 'Thành viên',
-            avatarPath: ud.avatarPath || null,
-          };
-        } else {
-          authorProf = { displayName: 'Thành viên', avatarPath: null };
-        }
-        userProfileCache.set(spot.authorId, authorProf);
+        const snap = await getDocs(
+          query(
+            collection(db, `users/${myUid}/privatePlaces`),
+            where(documentId(), '==', placeId)
+          )
+        );
+        snap.forEach((d) => {
+          const data = d.data();
+          result.set(d.id, {
+            id: d.id,
+            name: data.name,
+            nameNormalized: data.nameNormalized,
+            category: data.category,
+            address: data.address,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            geohash: data.geohash,
+            createdBy: myUid,
+            createdAt: null,
+            isPrivate: true,
+          });
+        });
       } catch {
-        authorProf = { displayName: 'Thành viên', avatarPath: null };
+        // Place riêng không đọc được: coi như không có metadata địa điểm
       }
-    }
+    })
+  );
 
-    feedItems.push({
+  return result;
+}
+
+/**
+ * Tải một trang Feed:
+ * 1. Bổ sung buffer cho các nguồn đã cạn buffer (giữ con trỏ riêng từng nguồn)
+ * 2. Gộp theo createdAt + id, loại trùng theo spotId
+ * 3. Cắt đúng pageSize và giữ phần dư trong buffer cho lần "Tải thêm"
+ *
+ * Nguồn lỗi không làm mất dữ liệu đã tải; lần gọi sau sẽ thử lại nguồn đó.
+ */
+export async function loadFeedPage(state: FeedPagerState): Promise<FeedPageResult> {
+  const { pageSize } = state;
+  const errors: string[] = [];
+
+  await Promise.all(
+    state.sources.map(async (source) => {
+      if (source.buffer.length > 0 || source.exhausted) return;
+      try {
+        source.buffer = await fetchSourcePage(source, pageSize);
+        source.error = null;
+      } catch (error) {
+        source.error = error instanceof Error ? error.message : 'Lỗi tải nguồn';
+        errors.push(source.error);
+      }
+    })
+  );
+
+  const merged = mergeUniqueSorted(state.sources.map((s) => s.buffer));
+  const { page } = takePage(merged, pageSize);
+
+  const consumed = new Set(page.map((s) => s.id));
+  state.sources.forEach((source) => {
+    source.buffer = source.buffer.filter((s) => !consumed.has(s.id));
+  });
+
+  const hasMore = state.sources.some((s) => s.buffer.length > 0 || !s.exhausted);
+
+  const placeMap = await loadPlacesForPage(page, state.myUid);
+  const [profiles, likeSummaries] = await Promise.all([
+    fetchProfilesByUids(page.map((s) => s.authorId)),
+    fetchLikeSummaries(
+      page.map((s) => s.id),
+      state.myUid
+    ),
+  ]);
+
+  const items: FeedItem[] = page.map((spot) => {
+    const profile = profiles.get(spot.authorId);
+    const likes = likeSummaries.get(spot.id);
+    return {
       spot,
-      place: placeData,
-      authorProfile: authorProf,
-    });
-  }
+      place:
+        spot.locationMode === 'hidden' || !spot.placeId
+          ? null
+          : placeMap.get(spot.placeId) || null,
+      authorProfile: profile
+        ? { displayName: profile.displayName, avatarPath: profile.avatarPath }
+        : { displayName: 'Thành viên', avatarPath: null },
+      likeCount: likes?.count || 0,
+      likedByViewer: likes?.likedByViewer || false,
+    };
+  });
 
-  return feedItems;
+  return {
+    items,
+    state,
+    hasMore,
+    isPartial: errors.length > 0,
+    errors,
+  };
 }

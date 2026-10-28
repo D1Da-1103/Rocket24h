@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/features/auth/AuthContext';
-import { loadFeedPage, FeedItem } from '@/features/feed/feed-loader';
+import {
+  createFeedPagerState,
+  FeedItem,
+  FeedPagerState,
+  loadFeedPage,
+} from '@/features/feed/feed-loader';
 import SpotCard from '@/components/SpotCard';
-import { collection, getDocs, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
 import {
   Compass,
   PlusCircle,
@@ -18,126 +21,144 @@ import {
   Sparkles,
   ArrowRight,
   RefreshCw,
+  Star,
+  Wallet,
+  AlertCircle,
 } from 'lucide-react';
-import { PLACE_CATEGORIES } from '@/lib/domain/config';
+import { APP_CONFIG, PLACE_CATEGORIES } from '@/lib/domain/config';
+import { DEFAULT_SPOT_FILTERS, matchesSpotFilters, PriceFilter } from '@/lib/domain/spot-filters';
+import { fetchFriendUids } from '@/lib/data/friends';
+import { fetchUserSavedPlaces } from '@/lib/data/saved-places';
+import { getSavedPlaceKey } from '@/lib/domain/schemas';
+
+const PRICE_OPTIONS: { id: PriceFilter; label: string }[] = [
+  { id: 'any', label: 'Mọi mức giá' },
+  { id: 'free', label: 'Miễn phí (0 đ)' },
+  { id: 'under50', label: 'Dưới 50k' },
+  { id: '50to150', label: '50k – 150k' },
+  { id: 'over150', label: 'Trên 150k' },
+];
 
 export default function HomePage() {
   const { user, profile } = useAuth();
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [likedSpotIds, setLikedSpotIds] = useState<Set<string>>(new Set());
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+
+  const pagerRef = useRef<FeedPagerState | null>(null);
 
   // Tìm kiếm & Lọc
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [priceFilter, setPriceFilter] = useState<PriceFilter>('any');
+  const [minRating, setMinRating] = useState<number | null>(null);
 
-  const loadFeed = async () => {
-    if (!user) return;
-    try {
-      // 1. Lấy danh sách bạn bè đã chấp nhận
-      const friendsSnap = await getDocs(collection(db, `users/${user.uid}/friends`));
-      const friendUids: string[] = [];
-      friendsSnap.forEach((d) => friendUids.push(d.id));
+  const loadFeed = useCallback(
+    async (reset: boolean) => {
+      if (!user) return;
 
-      // 2. Tải feed đa nguồn có kiểm soát quyền
-      const items = await loadFeedPage(user.uid, friendUids, 20);
-      setFeedItems(items);
+      if (reset) {
+        setLoading(true);
+        setFeedError(null);
+      } else {
+        setLoadingMore(true);
+      }
 
-      // 3. Tải danh sách like của user cho các bài này
-      const userLikes = new Set<string>();
-      await Promise.all(
-        items.map(async (item) => {
+      try {
+        let friendUids: string[] = [];
+        if (reset) {
           try {
-            const likeSnap = await getDoc(doc(db, `spots/${item.spot.id}/likes`, user.uid));
-            if (likeSnap.exists()) {
-              userLikes.add(item.spot.id);
-            }
-          } catch {
-            // bỏ qua
+            friendUids = await fetchFriendUids(user.uid);
+          } catch (error) {
+            console.warn('Không tải được danh sách bạn bè:', error);
+            setFeedError('Không tải được danh sách bạn bè. Bảng tin của bạn vẫn được hiển thị.');
           }
-        })
-      );
-      setLikedSpotIds(userLikes);
-    } catch (err) {
-      console.error('Lỗi khi tải bảng tin:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+
+          pagerRef.current = createFeedPagerState(
+            user.uid,
+            friendUids,
+            APP_CONFIG.pagination.feedPageSize
+          );
+
+          try {
+            const saved = await fetchUserSavedPlaces(user.uid);
+            setSavedKeys(
+              new Set(saved.filter((s) => s.isBookmarked).map((s) => getSavedPlaceKey(s.placeScope, s.placeId)))
+            );
+          } catch (error) {
+            console.warn('Không tải được trạng thái lưu địa điểm:', error);
+          }
+        }
+
+        if (!pagerRef.current) {
+          pagerRef.current = createFeedPagerState(
+            user.uid,
+            friendUids,
+            APP_CONFIG.pagination.feedPageSize
+          );
+        }
+
+        const page = await loadFeedPage(pagerRef.current);
+
+        setFeedItems((previous) => {
+          const base = reset ? [] : previous;
+          const seen = new Set(base.map((item) => item.spot.id));
+          return [...base, ...page.items.filter((item) => !seen.has(item.spot.id))];
+        });
+        setHasMore(page.hasMore);
+        if (page.isPartial) {
+          setFeedError('Một phần bảng tin chưa tải được. Dữ liệu đã tải vẫn được giữ lại.');
+        }
+      } catch (error) {
+        console.error('Lỗi khi tải bảng tin:', error);
+        setFeedError('Không thể tải bảng tin. Vui lòng thử lại.');
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [user]
+  );
 
   useEffect(() => {
     let cancelled = false;
     Promise.resolve().then(() => {
       if (cancelled) return;
       if (user) {
-        loadFeed();
+        loadFeed(true);
       } else {
+        setFeedItems([]);
         setLoading(false);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, loadFeed]);
 
-  // Xử lý Thích / Bỏ thích (Optimistic UI kèm rollback)
-  const handleLikeToggle = async (spotId: string) => {
-    if (!user) return;
-
-    const isCurrentlyLiked = likedSpotIds.has(spotId);
-    const nextSet = new Set(likedSpotIds);
-    if (isCurrentlyLiked) {
-      nextSet.delete(spotId);
-    } else {
-      nextSet.add(spotId);
-    }
-    setLikedSpotIds(nextSet);
-
-    try {
-      const likeRef = doc(db, `spots/${spotId}/likes`, user.uid);
-      if (isCurrentlyLiked) {
-        await deleteDoc(likeRef);
-      } else {
-        await setDoc(likeRef, {
-          userId: user.uid,
-          createdAt: new Date(),
-        });
-      }
-    } catch (err) {
-      console.error('Lỗi like:', err);
-      // Rollback
-      setLikedSpotIds(likedSpotIds);
-    }
+  const filters = {
+    ...DEFAULT_SPOT_FILTERS,
+    searchTerm,
+    category: selectedCategory === 'all' ? null : selectedCategory,
+    price: priceFilter,
+    minRating,
   };
 
-  // Lọc bài viết theo ô tìm kiếm và danh mục
-  const filteredItems = feedItems.filter((item) => {
-    const s = item.spot;
-    const p = item.place;
+  const filteredItems = feedItems.filter((item) =>
+    matchesSpotFilters(item.spot, item.place?.nameNormalized || null, filters)
+  );
 
-    // Lọc theo danh mục
-    if (selectedCategory !== 'all' && s.category !== selectedCategory) {
-      return false;
-    }
-
-    // Lọc theo từ khóa tìm kiếm
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase().trim();
-      const matchCaption = s.caption?.toLowerCase().includes(term);
-      const matchPlace = p?.name?.toLowerCase().includes(term) || p?.address?.toLowerCase().includes(term);
-      if (!matchCaption && !matchPlace) return false;
-    }
-
-    return true;
-  });
+  const hasFilter = Boolean(
+    searchTerm.trim() || selectedCategory !== 'all' || priceFilter !== 'any' || minRating !== null
+  );
 
   // GIAO DIỆN KHÁCH (CHƯA ĐĂNG NHẬP)
   if (!user) {
     return (
       <div className="space-y-16 py-8 sm:py-16">
-        {/* Hero Section */}
         <div className="max-w-5xl mx-auto px-4 text-center space-y-6">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-100 border border-orange-200 text-orange-700 text-xs font-semibold">
             <Sparkles className="w-4 h-4 text-orange-600" />
@@ -174,7 +195,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 4 Trụ Cột Đề Tài */}
         <div className="max-w-5xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm space-y-2.5">
             <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
@@ -220,18 +240,12 @@ export default function HomePage() {
     );
   }
 
-  // GIAO DIỆN BẢNG TIN CHO THÀNH VIÊN ĐÃ ĐĂNG NHẬP
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      {/* Top Banner / Chào mừng */}
       <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-3xl p-6 sm:p-8 text-white shadow-lg shadow-orange-500/20 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black">
-            Xin chào, {profile?.displayName || 'bạn'}! 👋
-          </h1>
-          <p className="text-sm text-orange-100 mt-1">
-            Hôm nay bạn đã khám phá quán ăn hay địa điểm thú vị nào chưa?
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-black">Xin chào, {profile?.displayName || 'bạn'}! 👋</h1>
+          <p className="text-sm text-orange-100 mt-1">Hôm nay bạn đã khám phá quán ăn hay địa điểm thú vị nào chưa?</p>
         </div>
         <Link
           href="/spots/new"
@@ -243,10 +257,9 @@ export default function HomePage() {
         </Link>
       </div>
 
-      {/* Bộ lọc và Tìm kiếm */}
+      {/* Tìm kiếm & Lọc */}
       <div className="bg-white p-4 rounded-2xl border border-stone-200 space-y-3 shadow-sm">
         <div className="flex flex-col sm:flex-row gap-2">
-          {/* Ô tìm kiếm */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -260,20 +273,16 @@ export default function HomePage() {
           </div>
 
           <button
-            onClick={() => {
-              setRefreshing(true);
-              loadFeed();
-            }}
-            disabled={refreshing}
+            onClick={() => loadFeed(true)}
+            disabled={loading}
             className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1.5"
             title="Làm mới bảng tin"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Làm mới</span>
           </button>
         </div>
 
-        {/* Danh mục lọc ngang */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
           <span className="text-stone-600 font-semibold flex items-center gap-1 pl-1 pr-2 flex-shrink-0">
             <Filter className="w-3.5 h-3.5" />
@@ -282,9 +291,7 @@ export default function HomePage() {
           <button
             onClick={() => setSelectedCategory('all')}
             className={`px-3 py-1.5 rounded-lg font-semibold flex-shrink-0 transition-colors ${
-              selectedCategory === 'all'
-                ? 'bg-orange-600 text-white'
-                : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+              selectedCategory === 'all' ? 'bg-orange-600 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
             }`}
           >
             Tất cả
@@ -294,26 +301,79 @@ export default function HomePage() {
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
               className={`px-3 py-1.5 rounded-lg font-semibold flex-shrink-0 transition-colors ${
-                selectedCategory === cat.id
-                  ? 'bg-orange-600 text-white'
-                  : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                selectedCategory === cat.id ? 'bg-orange-600 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
               }`}
             >
               {cat.label}
             </button>
           ))}
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="flex items-center gap-1.5 font-semibold text-stone-700">
+            <Wallet className="w-3.5 h-3.5" />
+            <span className="sr-only">Mức giá</span>
+            <select
+              value={priceFilter}
+              onChange={(e) => setPriceFilter(e.target.value as PriceFilter)}
+              className="px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-lg font-normal"
+            >
+              {PRICE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex items-center gap-1.5 font-semibold text-stone-700">
+            <Star className="w-3.5 h-3.5" />
+            <span className="sr-only">Đánh giá tối thiểu</span>
+            <select
+              value={minRating === null ? 'any' : String(minRating)}
+              onChange={(e) => setMinRating(e.target.value === 'any' ? null : Number(e.target.value))}
+              className="px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-lg font-normal"
+            >
+              <option value="any">Mọi đánh giá</option>
+              <option value="3">Từ 3 sao</option>
+              <option value="4">Từ 4 sao</option>
+              <option value="5">5 sao</option>
+            </select>
+          </label>
+
+          {hasFilter && (
+            <span className="text-stone-600">
+              {filteredItems.length}/{feedItems.length} bài đã tải khớp bộ lọc
+            </span>
+          )}
+        </div>
+
+        <p className="text-[11px] text-stone-600">
+          Giá và đánh giá là của từng Spot. Khi lọc cả hai, cùng một Spot phải thỏa cả hai điều kiện.
+        </p>
       </div>
 
-      {/* Danh sách bài viết (Feed List) */}
+      {feedError && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start justify-between gap-3 text-sm text-amber-900">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
+            <p>{feedError}</p>
+          </div>
+          <button
+            onClick={() => loadFeed(false)}
+            disabled={loadingMore}
+            className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-semibold hover:bg-amber-100"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
+
       <div className="space-y-6">
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="bg-white rounded-2xl border border-stone-200 p-6 animate-pulse space-y-4"
-              >
+              <div key={i} className="bg-white rounded-2xl border border-stone-200 p-6 animate-pulse space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-stone-200" />
                   <div className="space-y-2">
@@ -334,9 +394,26 @@ export default function HomePage() {
                 spot={item.spot}
                 place={item.place}
                 authorProfile={item.authorProfile}
-                isLiked={likedSpotIds.has(item.spot.id)}
-                onLikeToggle={() => handleLikeToggle(item.spot.id)}
-                onDeleted={(id) => setFeedItems(feedItems.filter((f) => f.spot.id !== id))}
+                isLiked={item.likedByViewer}
+                likeCount={item.likeCount}
+                isBookmarked={
+                  item.place
+                    ? savedKeys.has(
+                        getSavedPlaceKey(item.place.isPrivate ? 'private' : 'shared', item.place.id)
+                      )
+                    : false
+                }
+                onBookmarkChange={(bookmarked) => {
+                  if (!item.place) return;
+                  const key = getSavedPlaceKey(item.place.isPrivate ? 'private' : 'shared', item.place.id);
+                  setSavedKeys((previous) => {
+                    const next = new Set(previous);
+                    if (bookmarked) next.add(key);
+                    else next.delete(key);
+                    return next;
+                  });
+                }}
+                onDeleted={(id) => setFeedItems((previous) => previous.filter((f) => f.spot.id !== id))}
               />
             ))}
           </div>
@@ -346,13 +423,11 @@ export default function HomePage() {
               <Compass className="w-6 h-6" />
             </div>
             <h3 className="font-bold text-base text-stone-900">
-              {searchTerm || selectedCategory !== 'all'
-                ? 'Không tìm thấy bài viết phù hợp với bộ lọc'
-                : 'Bảng tin chưa có bài viết nào'}
+              {hasFilter ? 'Không tìm thấy bài viết phù hợp trong các bài đã tải' : 'Bảng tin chưa có bài viết nào'}
             </h3>
             <p className="text-xs text-stone-600 max-w-sm mx-auto">
-              {searchTerm || selectedCategory !== 'all'
-                ? 'Hãy thử thay đổi từ khóa tìm kiếm hoặc chọn danh mục khác.'
+              {hasFilter
+                ? 'Thử đổi bộ lọc hoặc bấm "Tải thêm" để tìm trong các bài cũ hơn.'
                 : 'Hãy đăng bài viết đầu tiên hoặc kết bạn với các thành viên khác để xem trải nghiệm của họ!'}
             </p>
             <div className="flex justify-center gap-2 pt-2">
@@ -369,6 +444,18 @@ export default function HomePage() {
                 Khám phá bạn bè
               </Link>
             </div>
+          </div>
+        )}
+
+        {hasMore && !loading && (
+          <div className="text-center">
+            <button
+              onClick={() => loadFeed(false)}
+              disabled={loadingMore}
+              className="px-6 py-3 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 text-sm font-semibold rounded-2xl shadow-sm disabled:opacity-60"
+            >
+              {loadingMore ? 'Đang tải thêm...' : 'Tải thêm bài viết'}
+            </button>
           </div>
         )}
       </div>

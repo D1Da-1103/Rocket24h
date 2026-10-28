@@ -1,12 +1,15 @@
 import {
   collection,
   doc,
+  documentId,
   getDoc,
   getDocs,
   query,
+  where,
   orderBy,
   startAt,
   endAt,
+  limit,
   setDoc,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -63,23 +66,8 @@ export async function fetchNearbyPlaces(
   // 2. Truy vấn các Place riêng tư của chính user (nếu có currentUid)
   if (currentUid) {
     try {
-      const privateSnap = await getDocs(collection(db, `users/${currentUid}/privatePlaces`));
-      privateSnap.forEach((d) => {
-        const data = d.data();
-        placesMap.set(d.id, {
-          id: d.id,
-          name: data.name,
-          nameNormalized: data.nameNormalized,
-          category: data.category,
-          address: data.address,
-          latitude: data.latitude,
-          longitude: data.longitude,
-          geohash: data.geohash,
-          createdBy: currentUid,
-          createdAt: null,
-          isPrivate: true,
-        });
-      });
+      const privatePlaces = await fetchUserPrivatePlaces(currentUid);
+      privatePlaces.forEach((place) => placesMap.set(place.id, place));
     } catch (err) {
       console.warn('Lỗi khi tải privatePlaces của người dùng:', err);
       hasQueryError = true;
@@ -96,7 +84,33 @@ export async function fetchNearbyPlaces(
 }
 
 /**
- * Lấy thông tin một địa điểm theo ID (kiểm tra cả shared và private)
+ * Lấy toàn bộ Place riêng tư của chủ tài khoản.
+ */
+export async function fetchUserPrivatePlaces(uid: string): Promise<Place[]> {
+  const snap = await getDocs(collection(db, `users/${uid}/privatePlaces`));
+  const list: Place[] = [];
+  snap.forEach((d) => {
+    const data = d.data();
+    list.push({
+      id: d.id,
+      name: data.name,
+      nameNormalized: data.nameNormalized,
+      category: data.category,
+      address: data.address,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      geohash: data.geohash,
+      createdBy: uid,
+      createdAt: null,
+      isPrivate: true,
+    });
+  });
+  return list;
+}
+
+/**
+ * Lấy thông tin một địa điểm theo ID.
+ * Place riêng chỉ đọc được khi currentUid chính là chủ tài khoản.
  */
 export async function getPlaceById(
   placeId: string,
@@ -149,7 +163,113 @@ export async function getPlaceById(
 }
 
 /**
- * Tạo địa điểm mới (Shared hoặc Private)
+ * Tải nhiều Place theo ID trong một lượt (Place dùng chung + privatePlaces của
+ * chính người xem). Dùng cho bản đồ cá nhân và feed để tránh N+1.
+ */
+export async function fetchPlacesByIds(
+  placeIds: string[],
+  currentUid?: string
+): Promise<Map<string, Place>> {
+  const unique = Array.from(new Set(placeIds.filter(Boolean)));
+  const result = new Map<string, Place>();
+
+  for (let i = 0; i < unique.length; i += 10) {
+    const chunk = unique.slice(i, i + 10);
+    if (chunk.length === 0) continue;
+
+    const sharedSnap = await getDocs(
+      query(collection(db, 'places'), where(documentId(), 'in', chunk))
+    );
+    sharedSnap.forEach((d) => {
+      const data = d.data();
+      result.set(d.id, {
+        id: d.id,
+        name: data.name,
+        nameNormalized: data.nameNormalized,
+        category: data.category,
+        address: data.address,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        geohash: data.geohash,
+        createdBy: data.createdBy,
+        createdAt: data.createdAt,
+        isPrivate: false,
+      });
+    });
+  }
+
+  if (currentUid) {
+    const missing = unique.filter((id) => !result.has(id));
+    for (let i = 0; i < missing.length; i += 10) {
+      const chunk = missing.slice(i, i + 10);
+      if (chunk.length === 0) continue;
+      const privSnap = await getDocs(
+        query(
+          collection(db, `users/${currentUid}/privatePlaces`),
+          where(documentId(), 'in', chunk)
+        )
+      );
+      privSnap.forEach((d) => {
+        const data = d.data();
+        result.set(d.id, {
+          id: d.id,
+          name: data.name,
+          nameNormalized: data.nameNormalized,
+          category: data.category,
+          address: data.address,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          geohash: data.geohash,
+          createdBy: currentUid,
+          createdAt: null,
+          isPrivate: true,
+        });
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Tìm Place dùng chung theo tiền tố tên đã chuẩn hóa (bỏ dấu, lowercase).
+ * Dùng cho tìm kiếm cơ bản; không tải cả collection.
+ */export async function searchSharedPlacesByPrefix(
+  term: string,
+  maxResults: number = 10
+): Promise<Place[]> {
+  const normalized = normalizeVietnamese(term);
+  if (!normalized) return [];
+
+  const q = query(
+    collection(db, 'places'),
+    where('nameNormalized', '>=', normalized),
+    where('nameNormalized', '<=', normalized + '\uf8ff'),
+    orderBy('nameNormalized'),
+    limit(maxResults)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      name: data.name,
+      nameNormalized: data.nameNormalized,
+      category: data.category,
+      address: data.address,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      geohash: data.geohash,
+      createdBy: data.createdBy,
+      createdAt: data.createdAt,
+      isPrivate: false,
+    };
+  });
+}
+
+/**
+ * Tạo địa điểm mới (Shared hoặc Private).
+ * Chỉ ghi đúng các field thuộc schema; id là khóa tài liệu nên không nằm trong dữ liệu.
  */
 export async function createPlace(
   data: {
@@ -177,28 +297,46 @@ export async function createPlace(
       longitude: data.longitude,
       geohash,
     };
-    await setDoc(doc(db, `users/${currentUid}/privatePlaces`, placeId), privPlace);
+    await setDoc(doc(db, `users/${currentUid}/privatePlaces`, placeId), {
+      name: privPlace.name,
+      nameNormalized: privPlace.nameNormalized,
+      category: privPlace.category,
+      address: privPlace.address,
+      latitude: privPlace.latitude,
+      longitude: privPlace.longitude,
+      geohash: privPlace.geohash,
+    });
     return {
       ...privPlace,
       createdBy: currentUid,
       createdAt: null,
       isPrivate: true,
     };
-  } else {
-    const sharedPlace: Place = {
-      id: placeId,
-      name: data.name,
-      nameNormalized,
-      category: data.category,
-      address: data.address,
-      latitude: data.latitude,
-      longitude: data.longitude,
-      geohash,
-      createdBy: currentUid,
-      createdAt: serverTimestamp(),
-      isPrivate: false,
-    };
-    await setDoc(doc(db, 'places', placeId), sharedPlace);
-    return sharedPlace;
   }
+
+  await setDoc(doc(db, 'places', placeId), {
+    name: data.name,
+    nameNormalized,
+    category: data.category,
+    address: data.address,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    geohash,
+    createdBy: currentUid,
+    createdAt: serverTimestamp(),
+  });
+
+  return {
+    id: placeId,
+    name: data.name,
+    nameNormalized,
+    category: data.category,
+    address: data.address,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    geohash,
+    createdBy: currentUid,
+    createdAt: new Date(),
+    isPrivate: false,
+  };
 }

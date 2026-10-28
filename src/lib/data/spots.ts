@@ -1,25 +1,37 @@
 import {
   collection,
   doc,
-  getDocs,
   getDoc,
+  getDocs,
   query,
   where,
   orderBy,
-  setDoc,
-  deleteDoc,
+  limit,
+  runTransaction,
   serverTimestamp,
-  writeBatch,
+  updateDoc,
+  Timestamp,
+  DocumentSnapshot,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase/client';
-import { Spot, VisibilityScope, LocationMode, PlaceScope } from '../domain/types';
+import {
+  Spot,
+  VisibilityScope,
+  LocationMode,
+  PlaceScope,
+  SpotLocation,
+} from '../domain/types';
 import { getSavedPlaceKey } from '../domain/schemas';
+import { mergeUniqueSorted } from '../domain/feed-merge';
+import { authedFetch, readApiError } from './api';
+
+const PLACE_SPOT_PAGE_SIZE = 50;
 
 export interface CreateSpotParams {
-  placeId: string | null;
-  realPlaceKey?: string;
-  realPlaceScope?: PlaceScope;
+  placeId: string;
+  realPlaceKey: string;
+  realPlaceScope: PlaceScope;
   locationMode: LocationMode;
   category: string;
   priceVnd: number | null;
@@ -32,178 +44,336 @@ export interface CreateSpotParams {
 
 /**
  * Tạo một Spot mới:
- * 1. Cấp spotId trước
- * 2. Upload ảnh lên Firebase Storage (đã được canvas strip EXIF)
- * 3. Ghi Spot document (nếu hidden thì placeId = null)
- * 4. Nếu hidden, ghi tham chiếu thật vào users/{uid}/spotLocations/{spotId}
- * 5. Cập nhật savedPlaces (hasVisited = true)
+ * 1. Cấp spotId trước, upload ảnh (đã bỏ EXIF ở client) dưới dạng object path
+ * 2. Ghi Spot + spotLocations (nếu ẩn vị trí) + savedPlaces + media trong transaction
+ * 3. Lỗi sau upload ⇒ dọn ảnh vừa tải, không báo thành công giả
+ *
+ * imagePaths lưu object path (`spots/{uid}/{spotId}/{file}`), KHÔNG lưu URL token.
  */
 export async function createSpot(
   params: CreateSpotParams,
   authorUid: string
 ): Promise<string> {
+  if (params.locationMode === 'hidden' && !params.realPlaceKey) {
+    throw new Error('Spot ẩn vị trí phải có tham chiếu địa điểm thật');
+  }
+  if (params.locationMode === 'exact' && !params.placeId) {
+    throw new Error('Spot chia sẻ vị trí phải gắn với một Place');
+  }
+
   const spotId = 'spot_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const uploadedPaths: string[] = [];
 
-  // 1. Upload ảnh
-  const imagePaths: string[] = [];
-  for (let i = 0; i < params.imageFiles.length; i++) {
-    const file = params.imageFiles[i];
-    const filename = `photo_${i + 1}_${Date.now()}.jpg`;
-    const storagePath = `spots/${authorUid}/${spotId}/${filename}`;
-    const storageRef = ref(storage, storagePath);
+  try {
+    for (let i = 0; i < params.imageFiles.length; i++) {
+      const file = params.imageFiles[i];
+      const storagePath = `spots/${authorUid}/${spotId}/photo_${i + 1}.jpg`;
+      await uploadBytes(ref(storage, storagePath), file, {
+        contentType: file.type || 'image/jpeg',
+      });
+      uploadedPaths.push(storagePath);
+    }
 
-    await uploadBytes(storageRef, file, {
-      contentType: file.type || 'image/jpeg',
-    });
+    const visitedAt = params.visitedAt
+      ? Timestamp.fromDate(params.visitedAt)
+      : serverTimestamp();
+    const created = serverTimestamp();
+    const effectivePlaceId = params.realPlaceKey;
+    const effectiveScope = params.realPlaceScope;
 
-    // Lấy URL tải ảnh
-    const downloadUrl = await getDownloadURL(storageRef);
-    imagePaths.push(downloadUrl);
-  }
-
-  const batch = writeBatch(db);
-
-  // 2. Ghi bản ghi Spot chính
-  const spotRef = doc(db, 'spots', spotId);
-  const now = serverTimestamp();
-
-  const spotData: Record<string, unknown> = {
-    id: spotId,
-    authorId: authorUid,
-    placeId: params.locationMode === 'hidden' ? null : params.placeId,
-    locationMode: params.locationMode,
-    imagePaths,
-    category: params.category,
-    priceVnd: params.priceVnd,
-    rating: params.rating,
-    caption: params.caption,
-    visibility: params.visibility,
-    visitedAt: params.visitedAt ? params.visitedAt : now,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  batch.set(spotRef, spotData);
-
-  // 3. Nếu là hidden location: ghi tham chiếu thật vào users/{authorUid}/spotLocations/{spotId}
-  if (params.locationMode === 'hidden' && params.realPlaceKey) {
+    const spotRef = doc(db, 'spots', spotId);
+    const savedRef = doc(
+      db,
+      `users/${authorUid}/savedPlaces`,
+      getSavedPlaceKey(effectiveScope, effectivePlaceId)
+    );
     const secretRef = doc(db, `users/${authorUid}/spotLocations`, spotId);
-    batch.set(secretRef, {
-      placeScope: params.realPlaceScope || 'shared',
-      placeKey: params.realPlaceKey,
-    });
-  }
 
-  // 4. Cập nhật savedPlaces: hasVisited = true
-  const effectivePlaceId = params.locationMode === 'hidden' ? params.realPlaceKey : params.placeId;
-  const effectivePlaceScope: PlaceScope = params.realPlaceScope || 'shared';
+    await runTransaction(db, async (tx) => {
+      // Đọc trước mọi ghi trong transaction
+      const savedSnap = await tx.get(savedRef);
 
-  if (effectivePlaceId) {
-    const savedKey = getSavedPlaceKey(effectivePlaceScope, effectivePlaceId);
-    const savedRef = doc(db, `users/${authorUid}/savedPlaces`, savedKey);
-    batch.set(
-      savedRef,
-      {
-        placeScope: effectivePlaceScope,
-        placeId: effectivePlaceId,
-        hasVisited: true,
-        lastVisitedAt: params.visitedAt || now,
-      },
-      { merge: true }
-    );
-  }
+      tx.set(spotRef, {
+        authorId: authorUid,
+        placeId: params.locationMode === 'hidden' ? null : params.placeId,
+        locationMode: params.locationMode,
+        imagePaths: uploadedPaths,
+        category: params.category,
+        priceVnd: params.priceVnd,
+        rating: params.rating,
+        caption: params.caption,
+        visibility: params.visibility,
+        visitedAt,
+        createdAt: created,
+        updatedAt: created,
+        status: 'active',
+      });
 
-  await batch.commit();
-  return spotId;
-}
-
-/**
- * Xóa một bài Spot và tính toán lại cờ hasVisited
- */
-export async function deleteSpot(spotId: string, currentUid: string): Promise<void> {
-  const spotRef = doc(db, 'spots', spotId);
-  const snap = await getDoc(spotRef);
-  if (!snap.exists()) {
-    throw new Error('Spot không tồn tại hoặc đã bị xóa');
-  }
-
-  const spotData = snap.data();
-  if (spotData.authorId !== currentUid) {
-    throw new Error('Bạn không có quyền xóa bài viết này');
-  }
-
-  const targetPlaceId = spotData.placeId;
-
-  // Xóa tài liệu Spot
-  await deleteDoc(spotRef);
-
-  // Xóa liên kết ẩn nếu có
-  if (spotData.locationMode === 'hidden') {
-    try {
-      await deleteDoc(doc(db, `users/${currentUid}/spotLocations`, spotId));
-    } catch {
-      // Bỏ qua nếu không tồn tại
-    }
-  }
-
-  // Tính lại hasVisited nếu Spot này từng gắn với một Place
-  if (targetPlaceId) {
-    // Đếm xem còn bài viết nào khác của user tại place này không
-    const remainingQuery = query(
-      collection(db, 'spots'),
-      where('authorId', '==', currentUid),
-      where('placeId', '==', targetPlaceId)
-    );
-    const remainingSnap = await getDocs(remainingQuery);
-
-    const savedKey = getSavedPlaceKey('shared', targetPlaceId);
-    const savedRef = doc(db, `users/${currentUid}/savedPlaces`, savedKey);
-    const savedSnap = await getDoc(savedRef);
-
-    if (savedSnap.exists()) {
-      const savedData = savedSnap.data();
-      const stillVisited = remainingSnap.size > 0;
-      if (!stillVisited && !savedData.isBookmarked) {
-        // Không còn ghé và cũng không bookmark -> xóa bản ghi
-        await deleteDoc(savedRef);
-      } else {
-        // Cập nhật lại trạng thái hasVisited
-        await setDoc(savedRef, { hasVisited: stillVisited }, { merge: true });
+      if (params.locationMode === 'hidden') {
+        const location: SpotLocation = {
+          placeScope: effectiveScope,
+          placeKey: effectivePlaceId,
+        };
+        tx.set(secretRef, location);
       }
-    }
+
+      const isBookmarked = savedSnap.exists()
+        ? Boolean(savedSnap.data().isBookmarked)
+        : false;
+      tx.set(
+        savedRef,
+        {
+          placeScope: effectiveScope,
+          placeId: effectivePlaceId,
+          hasVisited: true,
+          isBookmarked,
+          lastVisitedAt: visitedAt,
+        },
+        { merge: true }
+      );
+
+      uploadedPaths.forEach((objectPath, index) => {
+        tx.set(doc(db, 'media', `${spotId}_${index + 1}`), {
+          ownerId: authorUid,
+          spotId,
+          objectPath,
+          status: 'attached',
+        });
+      });
+    });
+
+    return spotId;
+  } catch (error) {
+    await Promise.all(
+      uploadedPaths.map(async (path) => {
+        try {
+          await deleteObject(ref(storage, path));
+        } catch {
+          // Ảnh chưa tồn tại hoặc đã bị dọn: bỏ qua để không che lỗi gốc
+        }
+      })
+    );
+    throw error;
   }
 }
 
 /**
- * Lấy danh sách Spot của một người dùng cụ thể
+ * Xóa Spot qua Route Handler: server đánh dấu deleting, dọn likes/media/liên kết ẩn
+ * rồi tính lại hasVisited một cách idempotent.
+ */
+export async function deleteSpot(spotId: string): Promise<void> {
+  const res = await authedFetch(`/api/spots/${encodeURIComponent(spotId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res));
+  }
+}
+
+/**
+ * Đổi phạm vi bài viết. Quyền đọc ảnh trong Storage Rules đọc trực tiếp Spot
+ * nên thay đổi này có hiệu lực ngay, không cần cập nhật URL ảnh.
+ */
+export async function updateSpotVisibility(
+  spotId: string,
+  visibility: VisibilityScope
+): Promise<void> {
+  await updateDoc(doc(db, 'spots', spotId), {
+    visibility,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+function mapSpot(snap: DocumentSnapshot): Spot {
+  return { id: snap.id, ...snap.data() } as Spot;
+}
+
+/**
+ * Lấy danh sách Spot của một người dùng (dùng cho trang cá nhân của chính mình).
  */
 export async function fetchUserSpots(userId: string): Promise<Spot[]> {
   const q = query(
     collection(db, 'spots'),
     where('authorId', '==', userId),
-    orderBy('createdAt', 'desc')
+    orderBy('createdAt', 'desc'),
+    limit(PLACE_SPOT_PAGE_SIZE)
   );
   const snap = await getDocs(q);
-  const spots: Spot[] = [];
-  snap.forEach((d) => {
-    spots.push({ id: d.id, ...d.data() } as Spot);
-  });
-  return spots;
+  return snap.docs.map(mapSpot);
 }
 
 /**
- * Lấy danh sách Spot tại một Place cụ thể
+ * Lấy Spot của người khác trong phạm vi người xem được phép đọc.
+ * Không tải cả collection rồi lọc ở client.
  */
-export async function fetchPlaceSpots(placeId: string): Promise<Spot[]> {
+export async function fetchUserSpotsForViewer(
+  authorId: string,
+  viewerUid: string | null | undefined,
+  areFriends: boolean
+): Promise<Spot[]> {
+  if (viewerUid === authorId) {
+    return fetchUserSpots(authorId);
+  }
+  if (!viewerUid) return [];
+
+  const q = query(
+    collection(db, 'spots'),
+    where('authorId', '==', authorId),
+    where('visibility', 'in', areFriends ? ['public', 'friends'] : ['public']),
+    orderBy('createdAt', 'desc'),
+    limit(PLACE_SPOT_PAGE_SIZE)
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map(mapSpot);
+}
+
+async function fetchVisibleSpotsAtPlace(
+  placeId: string,
+  authorId: string
+): Promise<Spot[]> {
   const q = query(
     collection(db, 'spots'),
     where('placeId', '==', placeId),
-    orderBy('createdAt', 'desc')
+    where('authorId', '==', authorId),
+    where('visibility', 'in', ['public', 'friends']),
+    orderBy('createdAt', 'desc'),
+    limit(PLACE_SPOT_PAGE_SIZE)
   );
   const snap = await getDocs(q);
-  const spots: Spot[] = [];
-  snap.forEach((d) => {
-    spots.push({ id: d.id, ...d.data() } as Spot);
+  return snap.docs.map(mapSpot);
+}
+
+async function fetchOwnExactSpotsAtPlace(placeId: string, viewerUid: string): Promise<Spot[]> {
+  const q = query(
+    collection(db, 'spots'),
+    where('placeId', '==', placeId),
+    where('authorId', '==', viewerUid),
+    orderBy('createdAt', 'desc'),
+    limit(PLACE_SPOT_PAGE_SIZE)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(mapSpot);
+}
+
+/**
+ * Spot ẩn vị trí của chính người xem: placeId = null nên phải tra
+ * users/{uid}/spotLocations/{spotId} rồi đọc từng Spot.
+ */
+async function fetchOwnHiddenSpotsAtPlace(
+  viewerUid: string,
+  placeId: string,
+  placeScope: PlaceScope
+): Promise<Spot[]> {
+  const locationsSnap = await getDocs(
+    collection(db, `users/${viewerUid}/spotLocations`)
+  );
+  const matchingSpotIds: string[] = [];
+  locationsSnap.forEach((d) => {
+    const data = d.data() as SpotLocation;
+    if (data.placeKey === placeId && data.placeScope === placeScope) {
+      matchingSpotIds.push(d.id);
+    }
   });
-  return spots;
+
+  const spots = await Promise.all(
+    matchingSpotIds.map(async (spotId) => {
+      const snap = await getDoc(doc(db, 'spots', spotId));
+      return snap.exists() ? mapSpot(snap) : null;
+    })
+  );
+  return spots.filter((s): s is Spot => s !== null);
+}
+
+/**
+ * Lấy các Spot được phép xem tại một Place:
+ * - lịch sử của chính người xem (gồm cả Spot ẩn vị trí)
+ * - trải nghiệm của bạn bè (public/friends)
+ *
+ * Trả về isPartial để UI hiển thị phần đã tải hợp lệ khi một nguồn lỗi.
+ */
+export async function fetchPlaceSpots(
+  placeId: string,
+  viewerUid: string | null | undefined,
+  friendUids: string[],
+  placeScope: PlaceScope
+): Promise<{ spots: Spot[]; isPartial: boolean }> {
+  if (!viewerUid) return { spots: [], isPartial: false };
+
+  const batches: Spot[][] = [];
+  let isPartial = false;
+
+  try {
+    batches.push(await fetchOwnExactSpotsAtPlace(placeId, viewerUid));
+  } catch (error) {
+    console.warn('Không tải được Spot của bạn tại Place:', error);
+    isPartial = true;
+  }
+
+  try {
+    batches.push(await fetchOwnHiddenSpotsAtPlace(viewerUid, placeId, placeScope));
+  } catch (error) {
+    console.warn('Không tải được Spot ẩn vị trí của bạn:', error);
+    isPartial = true;
+  }
+
+  if (placeScope === 'shared') {
+    const friendResults = await Promise.all(
+      friendUids.map(async (friendUid) => {
+        try {
+          return await fetchVisibleSpotsAtPlace(placeId, friendUid);
+        } catch (error) {
+          console.warn(`Không tải được Spot của bạn bè ${friendUid}:`, error);
+          isPartial = true;
+          return [];
+        }
+      })
+    );
+    batches.push(...friendResults);
+  }
+
+  return { spots: mergeUniqueSorted(batches), isPartial };
+}
+
+/**
+ * Toàn bộ Spot ẩn vị trí của chính người dùng, kèm tham chiếu địa điểm thật.
+ */
+export async function fetchOwnSpotLocations(
+  uid: string
+): Promise<Map<string, SpotLocation>> {
+  const snap = await getDocs(collection(db, `users/${uid}/spotLocations`));
+  const map = new Map<string, SpotLocation>();
+  snap.forEach((d) => map.set(d.id, d.data() as SpotLocation));
+  return map;
+}
+
+export async function fetchOwnSpotLocation(
+  uid: string,
+  spotId: string
+): Promise<SpotLocation | null> {
+  const snap = await getDoc(doc(db, `users/${uid}/spotLocations`, spotId));
+  return snap.exists() ? (snap.data() as SpotLocation) : null;
+}
+
+export async function fetchSpotsByIds(spotIds: string[]): Promise<Spot[]> {
+  const snapshots = await Promise.all(
+    spotIds.map(async (id) => {
+      try {
+        const snap = await getDoc(doc(db, 'spots', id));
+        return snap.exists() ? mapSpot(snap) : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return snapshots.filter((s): s is Spot => s !== null);
+}
+
+/**
+ * Đọc một Spot theo ID. Rules quyết định quyền đọc; lỗi permission-denied
+ * được ném ra để UI hiển thị "nội dung không còn khả dụng".
+ */
+export async function fetchSpotById(spotId: string): Promise<Spot | null> {
+  const snap = await getDoc(doc(db, 'spots', spotId));
+  return snap.exists() ? mapSpot(snap) : null;
 }

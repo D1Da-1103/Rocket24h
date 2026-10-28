@@ -2,7 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ============================================================
+    // Helpers
+    // ============================================================
     function isAuthenticated() {
       return request.auth != null && request.auth.uid != null;
     }
@@ -11,145 +13,301 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isFriend(targetUserId) {
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(targetUserId)/friends/$(request.auth.uid));
+    function isFriendOf(authorId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(authorId)/friends/$(request.auth.uid));
     }
 
-    // Users public profile
+    function canReadSpotData(spot) {
+      return isAuthenticated() && (
+        spot.authorId == request.auth.uid ||
+        spot.visibility == 'public' ||
+        (spot.visibility == 'friends' && isFriendOf(spot.authorId))
+      );
+    }
+
+    function isTimestampOrNull(value) {
+      return value == null || value is timestamp;
+    }
+
+    // ============================================================
+    // Users + subcollections
+    // ============================================================
     match /users/{userId} {
+      // Hồ sơ hiển thị công khai cho người dùng đã đăng nhập. Không lưu email/uid trong tài liệu.
       allow read: if isAuthenticated();
+
       allow create: if isOwner(userId)
-                    && request.resource.data.keys().hasAll(['displayName', 'createdAt'])
-                    && request.resource.data.displayName is string
-                    && request.resource.data.displayName.size() >= 2
-                    && request.resource.data.displayName.size() <= 60;
+        && request.resource.data.keys().hasOnly(['displayName', 'avatarPath', 'createdAt'])
+        && request.resource.data.keys().hasAll(['displayName', 'avatarPath', 'createdAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 60
+        && (request.resource.data.avatarPath == null ||
+            (request.resource.data.avatarPath is string && request.resource.data.avatarPath.size() <= 2048))
+        && request.resource.data.createdAt == request.time;
+
       allow update: if isOwner(userId)
-                    && request.resource.data.createdAt == resource.data.createdAt
-                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt']));
+        && request.resource.data.keys().hasOnly(['displayName', 'avatarPath', 'createdAt'])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 60
+        && (request.resource.data.avatarPath == null ||
+            (request.resource.data.avatarPath is string && request.resource.data.avatarPath.size() <= 2048));
+
       allow delete: if false;
 
-      // Subcollection: privatePlaces (Chỉ chủ sở hữu đọc/ghi)
+      // Place riêng: geohash bảo vệ như tọa độ. Bất biến sau khi tạo.
       match /privatePlaces/{placeId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasOnly([
+            'name', 'nameNormalized', 'category', 'address',
+            'latitude', 'longitude', 'geohash'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 2
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.nameNormalized is string
+          && request.resource.data.category is string
+          && request.resource.data.category.size() >= 1
+          && request.resource.data.address is string
+          && request.resource.data.address.size() >= 1
+          && request.resource.data.latitude is number
+          && request.resource.data.latitude >= -90.0
+          && request.resource.data.latitude <= 90.0
+          && request.resource.data.longitude is number
+          && request.resource.data.longitude >= -180.0
+          && request.resource.data.longitude <= 180.0
+          && request.resource.data.geohash is string
+          && request.resource.data.geohash.size() >= 1;
+        allow update: if false;
+        allow delete: if false;
       }
 
-      // Subcollection: spotLocations (Chỉ chủ sở hữu đọc/ghi)
+      // Tham chiếu vị trí thật cho Spot hidden. Chỉ chủ đọc; ghi khi tạo Spot.
       match /spotLocations/{spotId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['placeScope', 'placeKey'])
+          && request.resource.data.placeScope in ['shared', 'private']
+          && request.resource.data.placeKey is string
+          && request.resource.data.placeKey.size() >= 1;
+        allow update: if false;
+        allow delete: if false;
       }
 
-      // Subcollection: friends lookup table (CHỈ server / Admin SDK ghi)
+      // Bảng tra cứu quyền bạn bè: chỉ server (Admin SDK) ghi.
       match /friends/{friendUid} {
         allow read: if isOwner(userId);
         allow write: if false;
       }
 
-      // Subcollection: savedPlaces (Chỉ chủ sở hữu đọc/ghi)
+      // Saved Place: 1 bản ghi/địa điểm. hasVisited và isBookmarked độc lập.
       match /savedPlaces/{key} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasOnly([
+            'placeScope', 'placeId', 'hasVisited', 'isBookmarked', 'lastVisitedAt'
+          ])
+          && request.resource.data.placeScope in ['shared', 'private']
+          && request.resource.data.placeId is string
+          && request.resource.data.placeId.size() >= 1
+          && request.resource.data.hasVisited is bool
+          && request.resource.data.isBookmarked is bool
+          && (request.resource.data.hasVisited == true || request.resource.data.isBookmarked == true)
+          && isTimestampOrNull(request.resource.data.lastVisitedAt);
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly([
+            'placeScope', 'placeId', 'hasVisited', 'isBookmarked', 'lastVisitedAt'
+          ])
+          && request.resource.data.placeScope == resource.data.placeScope
+          && request.resource.data.placeId == resource.data.placeId
+          && request.resource.data.hasVisited is bool
+          && request.resource.data.isBookmarked is bool
+          && isTimestampOrNull(request.resource.data.lastVisitedAt);
+        // Chỉ xóa bản ghi không còn lịch sử ghé; xóa lần ghé cuối do server tính lại.
+        allow delete: if isOwner(userId) && resource.data.hasVisited == false;
       }
 
-      // Subcollection: notifications (Chỉ người nhận đọc, chỉ đổi isRead, client không tạo)
-      match /notifications/{notifId} {
+      // Thông báo do server tạo; người nhận chỉ đổi isRead.
+      match /notifications/{notificationId} {
         allow read: if isOwner(userId);
         allow update: if isOwner(userId)
-                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
-                      && request.resource.data.isRead is bool;
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+          && request.resource.data.isRead is bool;
         allow create, delete: if false;
       }
 
-      // Subcollection: pushDevices
+      // Phần mở rộng giai đoạn 3 (FCM)
       match /pushDevices/{deviceId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['installationId', 'updatedAt'])
+          && request.resource.data.installationId is string;
       }
     }
 
-    // User Settings (Chỉ chủ sở hữu)
+    // ============================================================
+    // User settings
+    // ============================================================
     match /userSettings/{userId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    // Shared Places
-    match /places/{placeId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated()
-                    && request.resource.data.keys().hasAll(['name', 'nameNormalized', 'category', 'address', 'latitude', 'longitude', 'geohash', 'createdBy', 'createdAt'])
-                    && request.resource.data.createdBy == request.auth.uid
-                    && request.resource.data.name is string
-                    && request.resource.data.name.size() >= 2
-                    && request.resource.data.name.size() <= 120
-                    && request.resource.data.latitude is number
-                    && request.resource.data.latitude >= -90.0
-                    && request.resource.data.latitude <= 90.0
-                    && request.resource.data.longitude is number
-                    && request.resource.data.longitude >= -180.0
-                    && request.resource.data.longitude <= 180.0
-                    && request.resource.data.geohash is string;
-      allow update: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(['defaultVisibility', 'notificationEnabled'])
+        && request.resource.data.defaultVisibility in ['public', 'friends', 'private']
+        && request.resource.data.notificationEnabled is bool;
       allow delete: if false;
     }
 
-    // Spots (Trải nghiệm)
-    match /spots/{spotId} {
-      // Quyền đọc theo Ma trận Mục 3
-      allow read: if isAuthenticated() && (
-        resource.data.authorId == request.auth.uid ||
-        resource.data.visibility == 'public' ||
-        (resource.data.visibility == 'friends' && isFriend(resource.data.authorId))
-      );
+    // ============================================================
+    // Shared Places: bất biến sau khi tạo
+    // ============================================================
+    match /places/{placeId} {
+      allow read: if isAuthenticated();
 
-      // Tạo Spot
       allow create: if isAuthenticated()
-                    && request.resource.data.authorId == request.auth.uid
-                    && request.resource.data.visibility in ['public', 'friends', 'private']
-                    && request.resource.data.locationMode in ['exact', 'hidden']
-                    && (request.resource.data.locationMode != 'hidden' || request.resource.data.placeId == null)
-                    && request.resource.data.imagePaths is list
-                    && request.resource.data.imagePaths.size() >= 1
-                    && request.resource.data.imagePaths.size() <= 5
-                    && request.resource.data.caption is string
-                    && request.resource.data.caption.size() <= 1000
-                    && (request.resource.data.rating == null || (request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5))
-                    && (request.resource.data.priceVnd == null || (request.resource.data.priceVnd is int && request.resource.data.priceVnd >= 0));
+        && request.resource.data.keys().hasOnly([
+          'name', 'nameNormalized', 'category', 'address',
+          'latitude', 'longitude', 'geohash', 'createdBy', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'name', 'nameNormalized', 'category', 'address',
+          'latitude', 'longitude', 'geohash', 'createdBy', 'createdAt'
+        ])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.nameNormalized is string
+        && request.resource.data.category is string
+        && request.resource.data.category.size() >= 1
+        && request.resource.data.address is string
+        && request.resource.data.address.size() >= 1
+        && request.resource.data.address.size() <= 300
+        && request.resource.data.latitude is number
+        && request.resource.data.latitude >= -90.0
+        && request.resource.data.latitude <= 90.0
+        && request.resource.data.longitude is number
+        && request.resource.data.longitude >= -180.0
+        && request.resource.data.longitude <= 180.0
+        && request.resource.data.geohash is string
+        && request.resource.data.geohash.size() >= 1;
 
-      // Sửa Spot (Chỉ tác giả)
+      allow update, delete: if false;
+    }
+
+    // ============================================================
+    // Spots
+    // ============================================================
+    match /spots/{spotId} {
+      allow read: if canReadSpotData(resource.data);
+
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly([
+          'authorId', 'placeId', 'locationMode', 'imagePaths', 'category',
+          'priceVnd', 'rating', 'caption', 'visibility', 'visitedAt',
+          'createdAt', 'updatedAt', 'status'
+        ])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.locationMode in ['exact', 'hidden']
+        && (
+          (request.resource.data.locationMode == 'hidden' && request.resource.data.placeId == null) ||
+          (request.resource.data.locationMode == 'exact' &&
+            request.resource.data.placeId is string &&
+            request.resource.data.placeId.size() >= 1)
+        )
+        && request.resource.data.imagePaths is list
+        && request.resource.data.imagePaths.size() >= 1
+        && request.resource.data.imagePaths.size() <= 5
+        && request.resource.data.category is string
+        && request.resource.data.category.size() >= 1
+        && (request.resource.data.priceVnd == null ||
+            (request.resource.data.priceVnd is int && request.resource.data.priceVnd >= 0))
+        && (request.resource.data.rating == null ||
+            (request.resource.data.rating is int &&
+             request.resource.data.rating >= 1 &&
+             request.resource.data.rating <= 5))
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 1000
+        && request.resource.data.visibility in ['public', 'friends', 'private']
+        && request.resource.data.visitedAt is timestamp
+        && (!('status' in request.resource.data) || request.resource.data.status == 'active');
+
+      // Chỉ tác giả được đổi visibility; mọi trường còn lại bất biến.
+      // created/updated dùng serverTimestamp nên updatedAt == request.time.
       allow update: if isAuthenticated()
-                    && resource.data.authorId == request.auth.uid
-                    && request.resource.data.authorId == resource.data.authorId
-                    && request.resource.data.createdAt == resource.data.createdAt
-                    && request.resource.data.visibility in ['public', 'friends', 'private']
-                    && request.resource.data.locationMode in ['exact', 'hidden']
-                    && (request.resource.data.locationMode != 'hidden' || request.resource.data.placeId == null)
-                    && request.resource.data.caption is string
-                    && request.resource.data.caption.size() <= 1000
-                    && (request.resource.data.rating == null || (request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5))
-                    && (request.resource.data.priceVnd == null || (request.resource.data.priceVnd is int && request.resource.data.priceVnd >= 0));
+        && resource.data.authorId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'authorId', 'placeId', 'locationMode', 'imagePaths', 'category',
+          'priceVnd', 'rating', 'caption', 'visibility', 'visitedAt',
+          'createdAt', 'updatedAt', 'status'
+        ])
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.placeId == resource.data.placeId
+        && request.resource.data.locationMode == resource.data.locationMode
+        && request.resource.data.imagePaths == resource.data.imagePaths
+        && request.resource.data.category == resource.data.category
+        && request.resource.data.priceVnd == resource.data.priceVnd
+        && request.resource.data.rating == resource.data.rating
+        && request.resource.data.caption == resource.data.caption
+        && request.resource.data.visitedAt == resource.data.visitedAt
+        && (
+          ('status' in resource.data && request.resource.data.status == resource.data.status) ||
+          (!('status' in resource.data) && !('status' in request.resource.data))
+        )
+        && request.resource.data.visibility in ['public', 'friends', 'private']
+        && request.resource.data.updatedAt == request.time;
 
-      // Xóa Spot (Chỉ tác giả)
-      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+      // Xóa Spot đi qua Route Handler để dọn likes/ảnh/liên kết và tính lại hasVisited.
+      allow delete: if false;
 
-      // Subcollection: likes
+      // Likes: docId = UID; server tạo/xóa và kiểm tra quyền đọc Spot.
       match /likes/{userId} {
-        allow read: if isAuthenticated();
-        allow create, delete: if isOwner(userId);
+        allow read: if isAuthenticated() && canReadSpotData(
+          get(/databases/$(database)/documents/spots/$(spotId)).data
+        );
+        allow write: if false;
       }
     }
 
-    // Friendships (Giao dịch tạo/sửa do server Route Handler quản lý; client chỉ đọc bản ghi liên quan)
+    // ============================================================
+    // Friendships: client đọc quan hệ của mình; ghi qua server transaction.
+    // ============================================================
     match /friendships/{pairId} {
       allow read: if isAuthenticated() && (
         resource.data.senderId == request.auth.uid ||
         resource.data.receiverId == request.auth.uid
       );
-      // Ghi qua Server Route Handler (Admin SDK)
       allow write: if false;
     }
 
-    // Media metadata
+    // ============================================================
+    // Media metadata: chủ sở hữu ghi, đường dẫn phải khớp UID/spotId.
+    // ============================================================
     match /media/{mediaId} {
-      allow read, write: if isAuthenticated() && (
-        resource == null || resource.data.ownerId == request.auth.uid
-      );
+      allow read: if isOwner(resource.data.ownerId);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly(['ownerId', 'spotId', 'objectPath', 'status'])
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.spotId is string
+        && request.resource.data.objectPath is string
+        && request.resource.data.objectPath.matches(
+             'spots/' + request.auth.uid + '/' + request.resource.data.spotId + '/.*'
+           )
+        && request.resource.data.status in ['temp', 'attached', 'orphan'];
+      allow update: if isOwner(resource.data.ownerId)
+        && request.resource.data.keys().hasOnly(['ownerId', 'spotId', 'objectPath', 'status'])
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.spotId == resource.data.spotId
+        && request.resource.data.objectPath == resource.data.objectPath
+        && request.resource.data.status in ['temp', 'attached', 'orphan'];
+      allow delete: if isOwner(resource.data.ownerId);
     }
   }
 }

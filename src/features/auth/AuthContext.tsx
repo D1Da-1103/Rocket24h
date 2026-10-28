@@ -56,7 +56,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatarPath: currentUser.photoURL || null,
           createdAt: serverTimestamp(),
         };
-        await setDoc(userRef, newProfile);
+        await setDoc(userRef, {
+          displayName: newProfile.displayName,
+          avatarPath: newProfile.avatarPath,
+          createdAt: newProfile.createdAt,
+        });
         setProfile(newProfile);
       }
 
@@ -112,8 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       createdAt: serverTimestamp(),
     };
 
-    // Ghi hồ sơ vào Firestore
-    await setDoc(doc(db, 'users', u.uid), newProfile);
+    // Ghi hồ sơ vào Firestore (không lưu uid trong tài liệu; uid là khóa tài liệu)
+    await setDoc(doc(db, 'users', u.uid), {
+      displayName,
+      avatarPath: null,
+      createdAt: serverTimestamp(),
+    });
 
     // Ghi cài đặt mặc định
     await setDoc(doc(db, 'userSettings', u.uid), {

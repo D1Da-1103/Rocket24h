@@ -16,6 +16,28 @@ export async function fetchUserSavedPlaces(userId: string): Promise<SavedPlace[]
 }
 
 /**
+ * Đọc trạng thái lưu/ghé của một địa điểm.
+ */
+export async function getSavedPlace(
+  userId: string,
+  placeScope: PlaceScope,
+  placeId: string
+): Promise<SavedPlace | null> {
+  const key = getSavedPlaceKey(placeScope, placeId);
+  const snap = await getDoc(doc(db, `users/${userId}/savedPlaces`, key));
+  return snap.exists() ? (snap.data() as SavedPlace) : null;
+}
+
+export async function isPlaceBookmarked(
+  userId: string,
+  placeScope: PlaceScope,
+  placeId: string
+): Promise<boolean> {
+  const saved = await getSavedPlace(userId, placeScope, placeId);
+  return Boolean(saved?.isBookmarked);
+}
+
+/**
  * Đổi trạng thái bookmark (lưu địa điểm)
  */
 export async function togglePlaceBookmark(

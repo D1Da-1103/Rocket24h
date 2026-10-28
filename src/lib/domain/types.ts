@@ -108,6 +108,17 @@ export interface AppNotification {
   actorName?: string;
 }
 
+export type FriendshipAction = 'request' | 'accept' | 'reject' | 'cancel' | 'remove';
+
+export type FriendshipState = 'none' | 'pending_sent' | 'pending_received' | 'accepted';
+
+export interface MediaRecord {
+  ownerId: string;
+  spotId: string;
+  objectPath: string;
+  status: 'temp' | 'attached' | 'orphan';
+}
+
 export interface PlaceCategory {
   id: string;
   label: string;

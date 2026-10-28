@@ -59,7 +59,6 @@ async function seed() {
   const now = new Date();
 
   await adminDb.doc(`friendships/${pairIdAliceBob}`).set({
-    pairId: pairIdAliceBob,
     senderId: 'uid_alice_001',
     receiverId: 'uid_bob_002',
     status: 'accepted',
@@ -346,7 +345,7 @@ async function seed() {
 
   for (const s of sampleSpots) {
     const { secretLocation, ...spotData } = s as typeof s & { secretLocation?: { placeScope: string; placeKey: string } };
-    await adminDb.doc(`spots/${s.id}`).set(spotData);
+    await adminDb.doc(`spots/${s.id}`).set({ ...spotData, status: 'active' });
 
     // Nếu là spot hidden, lưu liên kết thật vào users/{authorUid}/spotLocations/{spotId}
     if (secretLocation) {

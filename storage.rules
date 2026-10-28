@@ -14,29 +14,40 @@ service firebase.storage {
       return request.resource.size <= 5 * 1024 * 1024;
     }
 
+    function spotPath() {
+      return /databases/(default)/documents/spots/$(spotId);
+    }
+
+    function spotIsReadableByViewer(authorUid) {
+      return firestore.exists(spotPath())
+        && firestore.get(spotPath()).data.authorId == authorUid
+        && firestore.get(spotPath()).data.status != 'deleting'
+        && (
+          firestore.get(spotPath()).data.visibility == 'public' ||
+          (
+            firestore.get(spotPath()).data.visibility == 'friends' &&
+            firestore.exists(/databases/(default)/documents/users/$(authorUid)/friends/$(request.auth.uid))
+          )
+        );
+    }
+
     // Spot photos: spots/{authorUid}/{spotId}/{filename}
+    // Quyền đọc luôn bám theo visibility hiện tại của Spot, nên đổi visibility
+    // có hiệu lực ngay với ảnh đã tải trước đó.
     match /spots/{authorUid}/{spotId}/{filename} {
-      // Author can always read their own photos
-      // Other authenticated users can only read if spot is public or friends
       allow read: if isAuthenticated() && (
         request.auth.uid == authorUid ||
-        (
-          firestore.exists(/databases/(default)/documents/spots/$(spotId)) &&
-          (
-            firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'public' ||
-            (
-              firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'friends' &&
-              firestore.exists(/databases/(default)/documents/users/$(authorUid)/friends/$(request.auth.uid))
-            )
-          )
-        )
+        spotIsReadableByViewer(authorUid)
       );
 
-      // Only author can upload with valid image constraints
-      allow write: if isAuthenticated()
-                   && request.auth.uid == authorUid
-                   && isImage()
-                   && isUnder5MB();
+      // Chỉ tác giả được tải ảnh vào đúng thư mục Spot của mình.
+      allow create, update: if isAuthenticated()
+        && request.auth.uid == authorUid
+        && isImage()
+        && isUnder5MB();
+
+      // Server (Admin SDK) dọn ảnh khi xóa Spot; client không xóa trực tiếp.
+      allow delete: if false;
     }
 
     // Avatar photos: avatars/{uid}/{filename}

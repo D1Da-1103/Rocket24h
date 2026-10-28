@@ -6,7 +6,7 @@ Tài liệu kiểm thử cho đồ án **Rocket24h (Spot & Place Memory Journal)
 
 ## 1. Phương Pháp & Công Cụ Kiểm Thử
 
-- **Unit Testing**: Sử dụng `vitest` để kiểm tra các hàm nghiệp vụ độc lập, bộ chuẩn hóa dữ liệu, logic phân trang, lọc khoảng cách geohash và các bộ validate dữ liệu Zod.
+- **Unit Testing**: Sử dụng `vitest` để kiểm tra các hàm nghiệp vụ độc lập, bộ chuẩn hóa dữ liệu, logic phân trang, lọc khoảng cách geohash, bộ lọc tìm kiếm và ma trận quyền đọc Spot.
 - **Security Rules Testing**: Sử dụng `@firebase/rules-unit-testing` kết nối với Firestore Security Rules.
 - **Static Analysis**: TypeScript Compiler (`tsc --noEmit`) ở chế độ `strict: true` và ESLint (`eslint`).
 
@@ -14,7 +14,7 @@ Tài liệu kiểm thử cho đồ án **Rocket24h (Spot & Place Memory Journal)
 
 ## 2. Kết Quả Kiểm Thử Chi Tiết (Test Execution Log)
 
-### A. Unit Tests (`tests/unit/`) - 24/24 Tests PASS (100%)
+### A. Unit Tests (`tests/unit/`) - 38/38 Tests PASS (100%)
 
 Chạy bằng lệnh: `npm test` hoặc `npm run test:unit`
 
@@ -51,26 +51,62 @@ Chạy bằng lệnh: `npm test` hoặc `npm run test:unit`
    ✓ bắt buộc giới hạn ảnh từ 1 đến 5
    ✓ bắt buộc placeId == null khi locationMode == "hidden"
 
- Test Files  4 passed (4)
-      Tests  24 passed (24)
-   Duration  326ms
+ ✓ tests/unit/phase2-domain.test.ts (14 tests) — Giai đoạn 2
+   ✓ loại trùng theo spotId khi nhiều nguồn trả cùng một bài
+   ✓ sắp xếp mới nhất trước và ổn định khi trùng thời điểm
+   ✓ cắt đúng trang và giữ phần dư cho lần tải sau
+   ✓ quy đổi được Timestamp, Date, số, chuỗi và giá trị rỗng
+   ✓ tìm theo tiền tố tên Place không phân biệt dấu
+   ✓ tìm từ khóa trong chú thích
+   ✓ giá và đánh giá phải cùng thỏa trên một Spot
+   ✓ phân biệt giá null (chưa nhập) với 0 (miễn phí)
+   ✓ lọc theo danh mục và nhận biết bộ lọc đang bật
+   ✓ tác giả luôn đọc được bài của mình
+   ✓ bài public cho mọi người dùng đã đăng nhập
+   ✓ bài friends chỉ cho bạn bè đã chấp nhận
+   ✓ bài private và bài đang xóa thì không ai ngoài tác giả đọc được
+   ✓ khách chưa đăng nhập không đọc được bài nào
+
+ Test Files  5 passed (5)
+      Tests  38 passed (38)
 ```
 
 ---
 
-### B. Security Rules Tests (`tests/rules/firestore-rules.test.ts`)
+### B. Security Rules Tests (`tests/rules/firestore-rules.test.ts`) - 21 ca
 
-File test đã được xây dựng hoàn chỉnh với 8 ca kiểm thử phủ kín ma trận phân quyền:
+Chạy bằng `npm run test:rules` (khởi động Firestore Emulator). File test phủ ma trận phân quyền và các bất biến dữ liệu:
+
+**Ma trận đọc Spot**
 1. `Tác giả (Alice) đọc được tất cả: public, friends, private`
 2. `Bạn bè đã chấp nhận (Bob) đọc được public và friends, nhưng bị TỪ CHỐI private`
 3. `Thành viên khác chưa kết bạn (Charlie) chỉ đọc được public, bị TỪ CHỐI friends và private`
 4. `Khách chưa đăng nhập (Unauthenticated) bị TỪ CHỐI mọi Spot`
-5. `Chỉ Alice mới đọc được privatePlaces, spotLocations, savedPlaces, userSettings của mình`
-6. `Người khác (kể cả bạn bè Bob) bị TỪ CHỐI đọc dữ liệu riêng tư của Alice`
-7. `Client không thể tự ghi vào bảng tra cứu friends (chỉ server ghi)`
-8. `Client không thể tự tạo bản ghi notifications cho người khác`
-9. `Người dùng không thể sửa hoặc xóa Spot của người khác`
-10. `Từ chối Spot có locationMode = "hidden" nhưng placeId != null`
+5. `Spot đang xóa vẫn đọc được ở cấp tài liệu để không vỡ truy vấn`
+
+**Dữ liệu riêng tư**
+6. `Chỉ Alice mới đọc được privatePlaces, spotLocations, savedPlaces, userSettings của mình`
+7. `Người khác (kể cả bạn bè Bob) bị TỪ CHỐI đọc dữ liệu riêng tư của Alice`
+
+**Tạo Spot & schema**
+8. `Cho phép tạo Spot exact hợp lệ, kể cả giá null hoặc 0`
+9. `Cho phép Spot hidden khi placeId = null, và không cho chứa trường vị trí`
+10. `Từ chối giá/đánh giá sai kiểu hoặc ngoài khoảng`
+
+**Bất biến & quyền ghi**
+11. `Client không thể tự ghi vào bảng tra cứu friends (chỉ server ghi)`
+12. `Client không thể tạo, xóa hoặc sửa friendship; chỉ đọc khi là thành viên`
+13. `Client không thể tự tạo bản ghi notifications cho người khác`
+14. `Người nhận chỉ được đổi isRead của thông báo`
+15. `Like chỉ đọc theo quyền xem Spot; client không được ghi`
+16. `Người dùng không thể sửa hoặc xóa Spot của người khác`
+17. `Tác giả chỉ đổi được visibility; không sửa nội dung hay status`
+18. `Saved Place chỉ xóa được khi không còn lịch sử ghé`
+19. `Hồ sơ người dùng từ chối email/uid và trường ngoài schema`
+20. `Media chỉ ghi được với objectPath khớp UID và spotId của chính mình`
+
+**Place dùng chung**
+21. `Người dùng đã đăng nhập đọc được; khách bị từ chối; client không sửa/xóa`
 
 > [!NOTE]
 > **Ghi chú môi trường chạy Rules Emulator**:
@@ -84,6 +120,7 @@ File test đã được xây dựng hoàn chỉnh với 8 ca kiểm thử phủ 
 | Tiêu chuẩn | Lệnh kiểm tra | Kết quả | Ghi chú |
 |---|---|---|---|
 | TypeScript Strict | `npm run typecheck` | **PASS (0 errors)** | Tuân thủ strict type, không dùng any bừa bãi |
-| ESLint Next.js | `npm run lint` | **PASS (0 errors)** | Đạt chuẩn React 19 & Next.js App Router |
-| Production Build | `npm run build` | **PASS (0 errors)** | Biên dịch và Prerender thành công toàn bộ route |
-| Unit Tests | `npm test` | **PASS (24/24)** | 100% logic cốt lõi đã có test chứng minh |
+| ESLint Next.js | `npm run lint` | **PASS (0 errors)** | 12 warning không chặn build (`<img>`, gợi ý `exhaustive-deps`) |
+| Production Build | `npm run build` | **PASS (0 errors)** | Biên dịch và Prerender thành công toàn bộ 16 route |
+| Unit Tests | `npm test` | **PASS (38/38)** | 5 file, phủ logic Giai đoạn 1 & 2 |
+| Rules Tests | `npm run test:rules` | **Chưa chạy được cục bộ** | Cần JDK 21+ (xem ghi chú trên) |

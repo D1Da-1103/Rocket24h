@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests/unit",
     "test:unit": "vitest run tests/unit",
-    "test:rules": "vitest run tests/rules",
+    "test:rules": "firebase emulators:exec --only firestore \"vitest run tests/rules\"",
     "test:all": "vitest run",
     "test:watch": "vitest",
     "emulators": "firebase emulators:start --only auth,firestore,storage",

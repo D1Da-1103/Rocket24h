@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/features/auth/AuthContext';
+import { fetchUnreadNotificationCount } from '@/lib/data/notifications';
+import Avatar from './Avatar';
 import {
+  Bell,
   Compass,
   MapPin,
   PlusCircle,
@@ -19,6 +22,22 @@ export default function Navbar() {
   const { user, profile, logout } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) return;
+    fetchUnreadNotificationCount(user.uid)
+      .then((count) => {
+        if (!cancelled) setUnreadCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) setUnreadCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, pathname]);
 
   const navLinks = [
     { href: '/', label: 'Bảng tin', icon: Compass },
@@ -84,23 +103,29 @@ export default function Navbar() {
                 Tạo Spot
               </Link>
 
+              <Link
+                href="/notifications"
+                className="relative p-2 text-stone-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                title="Thông báo"
+                aria-label={
+                  unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'
+                }
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </Link>
+
               <div className="flex items-center gap-2 pl-2 border-l border-stone-200">
                 <Link
                   href="/profile"
                   className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-stone-100 transition-colors"
                   title="Trang cá nhân"
                 >
-                  <div className="w-8 h-8 rounded-full bg-orange-100 border border-orange-200 overflow-hidden flex items-center justify-center text-orange-600 font-bold text-sm">
-                    {profile?.avatarPath ? (
-                      <img
-                        src={profile.avatarPath}
-                        alt={profile.displayName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      profile?.displayName?.charAt(0).toUpperCase() || 'U'
-                    )}
-                  </div>
+                  <Avatar path={profile?.avatarPath} name={profile?.displayName} size="sm" />
                   <span className="text-sm font-medium text-stone-700 max-w-[120px] truncate">
                     {profile?.displayName || 'Thành viên'}
                   </span>
@@ -136,13 +161,30 @@ export default function Navbar() {
         {/* Mobile menu button */}
         <div className="flex items-center gap-2 md:hidden">
           {user && (
-            <Link
-              href="/spots/new"
-              className="p-2 text-white bg-orange-500 rounded-lg shadow-sm"
-              title="Tạo Spot mới"
-            >
-              <PlusCircle className="w-5 h-5" />
-            </Link>
+            <>
+              <Link
+                href="/notifications"
+                className="relative p-2 text-stone-600 hover:bg-stone-100 rounded-lg"
+                title="Thông báo"
+                aria-label={
+                  unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'
+                }
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/spots/new"
+                className="p-2 text-white bg-orange-500 rounded-lg shadow-sm"
+                title="Tạo Spot mới"
+              >
+                <PlusCircle className="w-5 h-5" />
+              </Link>
+            </>
           )}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -159,17 +201,7 @@ export default function Navbar() {
         <div className="md:hidden border-t border-stone-200 bg-white px-4 py-4 space-y-2">
           {user && (
             <div className="flex items-center gap-3 pb-3 border-b border-stone-100">
-              <div className="w-10 h-10 rounded-full bg-orange-100 border border-orange-200 overflow-hidden flex items-center justify-center text-orange-600 font-bold">
-                {profile?.avatarPath ? (
-                  <img
-                    src={profile.avatarPath}
-                    alt={profile.displayName}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  profile?.displayName?.charAt(0).toUpperCase() || 'U'
-                )}
-              </div>
+              <Avatar path={profile?.avatarPath} name={profile?.displayName} />
               <div>
                 <p className="font-semibold text-stone-800 text-sm">{profile?.displayName}</p>
                 <p className="text-xs text-stone-600">{user.email}</p>
@@ -197,6 +229,21 @@ export default function Navbar() {
 
           {user ? (
             <>
+              <Link
+                href="/notifications"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-stone-700 hover:bg-stone-50"
+              >
+                <span className="flex items-center gap-3">
+                  <Bell className="w-5 h-5" />
+                  Thông báo
+                </span>
+                {unreadCount > 0 && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </Link>
               <Link
                 href="/profile"
                 onClick={() => setMobileMenuOpen(false)}
