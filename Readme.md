@@ -5,6 +5,20 @@
 > **Công nghệ**: Next.js (App Router, TypeScript strict), Firebase (Auth, Firestore, Storage, Emulators), Leaflet, Geofire-common, Tailwind CSS.
 
 ---
+## 📌 0. Các bước khởi tạo dự án
+Terminal 1 — Cài đặt package và chạy Firebase:
+    npm ci
+    copy .env.example .env.local
+    npm install -g firebase-tools
+    npm run emulators
+Terminal 2 — Nạp dữ liệu mẫu:
+    cd /d D:\D1DaAPP\ChuyendeCNTT\Rocket24h
+    npm run seed
+Terminal 3 — Chạy ứng dụng:
+    cd /d D:\D1DaAPP\ChuyendeCNTT\Rocket24h
+    npm run dev
+Ứng dụng: localhost:3000
+Firebase Emulator: localhost:4000
 
 ## 📌 1. Giới thiệu Đề tài
 
