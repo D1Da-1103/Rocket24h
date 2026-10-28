@@ -13,7 +13,7 @@
     "test:rules": "firebase emulators:exec --only firestore \"vitest run tests/rules\"",
     "test:all": "vitest run",
     "test:watch": "vitest",
-    "emulators": "firebase emulators:start --only auth,firestore,storage",
+    "emulators": "firebase emulators:start --project rocket24h-local --only auth,firestore,storage",
     "dev:emulated": "npm-run-all --parallel emulators dev",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "cleanup:media": "tsx --env-file=.env.local scripts/cleanup-media.ts"
