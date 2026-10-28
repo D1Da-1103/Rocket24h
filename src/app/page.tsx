@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/features/auth/AuthContext';
 import {
@@ -52,6 +52,7 @@ export default function HomePage() {
 
   // Tìm kiếm & Lọc
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [priceFilter, setPriceFilter] = useState<PriceFilter>('any');
   const [minRating, setMinRating] = useState<number | null>(null);
@@ -141,7 +142,7 @@ export default function HomePage() {
 
   const filters = {
     ...DEFAULT_SPOT_FILTERS,
-    searchTerm,
+    searchTerm: deferredSearchTerm,
     category: selectedCategory === 'all' ? null : selectedCategory,
     price: priceFilter,
     minRating,
@@ -152,7 +153,10 @@ export default function HomePage() {
   );
 
   const hasFilter = Boolean(
-    searchTerm.trim() || selectedCategory !== 'all' || priceFilter !== 'any' || minRating !== null
+    deferredSearchTerm.trim() ||
+      selectedCategory !== 'all' ||
+      priceFilter !== 'any' ||
+      minRating !== null
   );
 
   // GIAO DIỆN KHÁCH (CHƯA ĐĂNG NHẬP)

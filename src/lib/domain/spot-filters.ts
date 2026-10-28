@@ -40,12 +40,25 @@ function matchesSearch(
   term: string
 ): boolean {
   const normalizedTerm = normalizeVietnamese(term);
-  if (!normalizedTerm) return true;
-  const placeMatches = placeNameNormalized
-    ? normalizeVietnamese(placeNameNormalized).startsWith(normalizedTerm)
-    : false;
-  const captionMatches = normalizeVietnamese(spot.caption || '').includes(normalizedTerm);
-  return placeMatches || captionMatches;
+  const normalizedTerms = normalizedTerm
+    .split(/\s+/)
+    .filter(Boolean);
+  if (normalizedTerms.length === 0) return true;
+
+  const normalizedPlace = normalizeVietnamese(placeNameNormalized || '');
+  const placeMatches =
+    normalizedPlace.startsWith(normalizedTerm) ||
+    (normalizedTerms.length > 1 && normalizedTerms.every((token) => normalizedPlace.includes(token)));
+  if (placeMatches) return true;
+
+  const searchableText = [
+    spot.caption || '',
+    spot.category || '',
+  ]
+    .map(normalizeVietnamese)
+    .join(' ');
+
+  return normalizedTerms.every((searchToken) => searchableText.includes(searchToken));
 }
 
 /**

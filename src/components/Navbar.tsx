@@ -134,6 +134,7 @@ export default function Navbar() {
                 <button
                   onClick={() => logout()}
                   title="Đăng xuất"
+                  aria-label="Đăng xuất"
                   className="p-2 text-stone-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                 >
                   <LogOut className="w-4 h-4" />

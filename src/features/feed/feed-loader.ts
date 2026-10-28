@@ -14,6 +14,7 @@ import { Spot, Place } from '@/lib/domain/types';
 import { mergeUniqueSorted, takePage } from '@/lib/domain/feed-merge';
 import { fetchProfilesByUids } from '@/lib/data/users';
 import { fetchLikeSummaries } from '@/lib/data/likes';
+import { measurePerformance } from '@/lib/performance';
 
 export interface FeedItem {
   spot: Spot;
@@ -208,6 +209,8 @@ async function loadPlacesForPage(
 export async function loadFeedPage(state: FeedPagerState): Promise<FeedPageResult> {
   const { pageSize } = state;
   const errors: string[] = [];
+  const performanceStart = `feed-start-${Date.now()}-${Math.random()}`;
+  if (typeof performance !== 'undefined') performance.mark(performanceStart);
 
   await Promise.all(
     state.sources.map(async (source) => {
@@ -257,6 +260,13 @@ export async function loadFeedPage(state: FeedPagerState): Promise<FeedPageResul
       likedByViewer: likes?.likedByViewer || false,
     };
   });
+
+  if (typeof performance !== 'undefined') {
+    const measurement = measurePerformance('feed-page-load', performanceStart, `${performanceStart}-end`);
+    if (measurement) {
+      console.info(`[performance] ${measurement.name}: ${measurement.durationMs}ms`);
+    }
+  }
 
   return {
     items,

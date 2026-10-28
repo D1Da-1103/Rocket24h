@@ -135,3 +135,16 @@ Chạy bằng `npm run test:rules` (khởi động Firestore Emulator). File tes
 
 Các cảnh báo ESLint hiện còn là cảnh báo không chặn build về `<img>` và dependency của
 React Hook; chưa có lỗi lint mới do Giai đoạn 3.
+
+### D. Bổ sung hoàn thiện Giai đoạn 3
+
+- Tìm kiếm Feed: **đã cải thiện** chuẩn hóa nhiều từ tiếng Việt, tìm tiền tố Place,
+  tìm tất cả token trong chú thích/danh mục và dùng `useDeferredValue` để tránh làm
+  nghẽn thao tác nhập.
+- Bản đồ: **đã có clustering nhẹ** theo ô lưới, tự tái tính khi zoom và phóng to khi
+  người dùng chọn cụm. Không thêm dependency marker-cluster để giữ bundle nhỏ.
+- Hiệu năng: **đã có đo đạc** thời gian tải từng trang Feed bằng Performance API và log
+  `[performance] feed-page-load: ...ms`. Chưa tuyên bố đạt mục tiêu dưới 3 giây vì chưa
+  đo trên môi trường triển khai đại diện.
+- Accessibility: **đã bổ sung** focus ring toàn cục, hỗ trợ `prefers-reduced-motion`,
+  nhãn cho bản đồ tương tác, nhãn nút đăng xuất và các trạng thái upload trước đó.

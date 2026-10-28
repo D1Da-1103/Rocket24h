@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMapConfig } from './MapProvider';
@@ -53,6 +53,7 @@ export default function LeafletMapInner({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const draggableMarkerRef = useRef<L.Marker | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
+  const [mapZoom, setMapZoom] = useState(zoom);
   const { tileUrl, attribution } = useMapConfig();
 
   // Khởi tạo Map
@@ -73,6 +74,7 @@ export default function LeafletMapInner({
 
       markerLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
+      map.on('zoomend', () => setMapZoom(map.getZoom()));
     }
 
     return () => {
@@ -168,7 +170,38 @@ export default function LeafletMapInner({
       })),
     ];
 
+    const currentZoom = mapZoom;
+    const cellSize = 0.04 / Math.pow(2, Math.max(0, currentZoom - 10));
+    const clusters = new Map<string, MapMarkerItem[]>();
     allItems.forEach((item) => {
+      const clusterKey = `${Math.floor(item.latitude / cellSize)}:${Math.floor(item.longitude / cellSize)}`;
+      const cluster = clusters.get(clusterKey) || [];
+      cluster.push(item);
+      clusters.set(clusterKey, cluster);
+    });
+
+    clusters.forEach((clusterItems) => {
+      if (clusterItems.length > 1) {
+        const latitude = clusterItems.reduce((sum, item) => sum + item.latitude, 0) / clusterItems.length;
+        const longitude = clusterItems.reduce((sum, item) => sum + item.longitude, 0) / clusterItems.length;
+        const clusterIcon = L.divIcon({
+          className: 'place-cluster-icon',
+          html: `<div class="place-cluster-badge" aria-label="${clusterItems.length} địa điểm">${clusterItems.length}</div>`,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
+        });
+        const clusterMarker = L.marker([latitude, longitude], { icon: clusterIcon, title: `${clusterItems.length} địa điểm` });
+        clusterMarker.bindPopup(
+          `<strong>${clusterItems.length} địa điểm gần nhau</strong><br/>Phóng to bản đồ để xem từng địa điểm.`
+        );
+        clusterMarker.on('click', () => {
+          mapInstanceRef.current?.setView([latitude, longitude], Math.min(currentZoom + 2, 19), { animate: true });
+        });
+        markerLayerRef.current?.addLayer(clusterMarker);
+        return;
+      }
+
+      const item = clusterItems[0];
       const isPriv = item.isPrivate;
       const markerColor = isPriv ? '#6366f1' : '#0284c7';
 
@@ -221,13 +254,15 @@ export default function LeafletMapInner({
 
       markerLayerRef.current?.addLayer(marker);
     });
-  }, [markers, places]);
+  }, [markers, places, onPlaceSelect, mapZoom]);
 
   return (
     <div
       ref={mapContainerRef}
       style={{ height, width: '100%', borderRadius: '12px', zIndex: 1 }}
       className="shadow-inner border border-stone-200"
+      role="application"
+      aria-label="Bản đồ tương tác"
     />
   );
 }

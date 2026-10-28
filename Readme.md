@@ -87,6 +87,13 @@ npm run cleanup:media
 Lệnh chỉ xóa media tạm/orphan cũ hơn 24 giờ (có thể đổi bằng biến
 `MEDIA_CLEANUP_AGE_HOURS`) và có thể chạy lặp lại.
 
+### Ghi nhận hoàn thiện Giai đoạn 3
+
+- Feed hỗ trợ tìm kiếm không dấu, nhiều từ và lọc theo caption/danh mục.
+- Bản đồ tự gom các địa điểm gần nhau thành cụm và phóng to khi chọn cụm.
+- Thời gian tải trang Feed được đo bằng Performance API trong console trình duyệt.
+- Giao diện có focus state rõ, hỗ trợ giảm chuyển động và nhãn trợ năng cho các điều khiển chính.
+
 ---
 
 ## 🔑 4. Danh sách Tài khoản Demo (Seed Accounts)
