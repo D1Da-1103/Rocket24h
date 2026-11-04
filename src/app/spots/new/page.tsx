@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/features/auth/AuthContext';
 import ImageUploader from '@/components/ImageUploader';
@@ -188,6 +189,11 @@ function CreateSpotContent() {
       setLocationMode('exact');
       setSuccessSpotId(spotId);
       setTimeout(() => {
+        // flushSync đảm bảo React commit state = null vào cache TRƯỚC khi navigate
+        flushSync(() => {
+          setSuccessSpotId(null);
+        });
+        router.refresh(); // Xóa cache Next.js App Router cho trang /spots/new
         router.replace('/');
       }, 1500);
     } catch (err: unknown) {
