@@ -173,9 +173,22 @@ function CreateSpotContent() {
         user.uid
       );
 
+      // Reset toàn bộ form state ngay sau khi thành công để tránh dữ liệu cũ hiển thị khi tạo Spot mới
+      setImages([]);
+      setCoords({ lat: APP_CONFIG.geo.defaultCenter.latitude, lng: APP_CONFIG.geo.defaultCenter.longitude });
+      setSelectedPlace(null);
+      setNewPlaceForm(null);
+      setCategory(PLACE_CATEGORIES[0].id);
+      setPriceType('unspecified');
+      setRawPrice('');
+      setRating(null);
+      setCaption('');
+      setVisitedDate(new Date().toISOString().split('T')[0]);
+      setVisibility('friends');
+      setLocationMode('exact');
       setSuccessSpotId(spotId);
       setTimeout(() => {
-        router.push('/');
+        router.replace('/');
       }, 1500);
     } catch (err: unknown) {
       console.error('Lỗi khi tạo Spot:', err);
