@@ -93,3 +93,24 @@ textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Tối ưu hiển thị Leaflet trong Tailwind v4 */
+.leaflet-container {
+  font-family: inherit;
+}
+.leaflet-container img {
+  max-width: none !important;
+  max-height: none !important;
+}
+.custom-draggable-pin {
+  background: transparent !important;
+  border: none !important;
+}
+.place-marker-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.place-cluster-icon {
+  background: transparent !important;
+  border: none !important;
+}

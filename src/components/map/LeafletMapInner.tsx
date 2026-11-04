@@ -56,12 +56,22 @@ export default function LeafletMapInner({
   const [mapZoom, setMapZoom] = useState(zoom);
   const { tileUrl, attribution } = useMapConfig();
 
+  // Ref lưu draggablePin mới nhất để tránh stale closures khi click hoặc drag
+  const draggablePinRef = useRef(draggablePin);
+  useEffect(() => {
+    draggablePinRef.current = draggablePin;
+  }, [draggablePin]);
+
   // Khởi tạo Map
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     if (!mapInstanceRef.current) {
-      const map = L.map(mapContainerRef.current, {
+      const map = L.map(container, {
         center,
         zoom,
         zoomControl: true,
@@ -70,25 +80,49 @@ export default function LeafletMapInner({
       L.tileLayer(tileUrl, {
         attribution,
         maxZoom: 19,
+        subdomains: 'abc',
+        referrerPolicy: 'strict-origin-when-cross-origin',
       }).addTo(map);
+
+      // Cho phép nhấp bất kỳ đâu trên bản đồ để đặt/di chuyển ghim
+      map.on('click', (e: L.LeafletMouseEvent) => {
+        if (draggablePinRef.current) {
+          draggablePinRef.current.onDragEnd(e.latlng.lat, e.latlng.lng);
+        }
+      });
 
       markerLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
       map.on('zoomend', () => setMapZoom(map.getZoom()));
+
+      // Đảm bảo tile render đầy đủ khi container hoàn tất kích thước
+      timer = setTimeout(() => {
+        map.invalidateSize();
+      }, 150);
+
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => {
+          map.invalidateSize();
+        });
+        resizeObserver.observe(container);
+      }
     }
 
     return () => {
+      if (timer) clearTimeout(timer);
+      if (resizeObserver) resizeObserver.disconnect();
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [tileUrl, attribution]);
 
   // Cập nhật tâm bản đồ
   useEffect(() => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.setView(center, zoom, { animate: true });
+      mapInstanceRef.current.invalidateSize();
     }
   }, [center[0], center[1], zoom]);
 
@@ -131,12 +165,14 @@ export default function LeafletMapInner({
         const marker = L.marker([draggablePin.latitude, draggablePin.longitude], {
           draggable: true,
           icon: pinIcon,
-          title: 'Kéo để chọn vị trí chính xác',
+          title: 'Kéo hoặc nhấp trên bản đồ để chọn vị trí',
         }).addTo(mapInstanceRef.current);
 
         marker.on('dragend', () => {
           const pos = marker.getLatLng();
-          draggablePin.onDragEnd(pos.lat, pos.lng);
+          if (draggablePinRef.current) {
+            draggablePinRef.current.onDragEnd(pos.lat, pos.lng);
+          }
         });
 
         draggableMarkerRef.current = marker;
@@ -259,7 +295,13 @@ export default function LeafletMapInner({
   return (
     <div
       ref={mapContainerRef}
-      style={{ height, width: '100%', borderRadius: '12px', zIndex: 1 }}
+      style={{
+        height,
+        width: '100%',
+        borderRadius: '12px',
+        zIndex: 1,
+        cursor: draggablePin ? 'crosshair' : 'grab',
+      }}
       className="shadow-inner border border-stone-200"
       role="application"
       aria-label="Bản đồ tương tác"
