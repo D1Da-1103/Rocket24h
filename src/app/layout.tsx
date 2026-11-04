@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import 'leaflet/dist/leaflet.css';
 import { AuthProvider } from '@/features/auth/AuthContext';
 import { MapProvider } from '@/components/map/MapProvider';
 import Navbar from '@/components/Navbar';
@@ -20,8 +21,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className="h-full">
-      <body className={`${inter.className} min-h-full flex flex-col bg-stone-50 text-stone-900 antialiased`}>
+    <html lang="vi" className="h-full" suppressHydrationWarning>
+      <body
+        className={`${inter.className} min-h-full flex flex-col bg-stone-50 text-stone-900 antialiased`}
+        suppressHydrationWarning
+      >
         <AuthProvider>
           <MapProvider>
             <Suspense fallback={<header className="h-16 border-b border-stone-200 bg-white/90" />}>
