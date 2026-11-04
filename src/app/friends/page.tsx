@@ -9,6 +9,7 @@ import {
   fetchOutgoingRequests,
   searchNewFriends,
   submitFriendAction,
+  subscribeFriendLists,
   FriendEntry,
   FriendRequestEntry,
 } from '@/lib/data/friends';
@@ -82,9 +83,34 @@ export default function FriendsPage() {
   }, [user]);
 
   useEffect(() => {
-    // loadAll đặt loading ngay; chạy ở microtask để không setState đồng bộ trong effect.
-    queueMicrotask(loadAll);
-  }, [loadAll]);
+    if (!user) return;
+
+    let cancelled = false;
+    let unsubscribe: () => void = () => undefined;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+      unsubscribe = subscribeFriendLists(
+        user.uid,
+        (data) => {
+          setFriends(data.friends);
+          setIncoming(data.incoming);
+          setOutgoing(data.outgoing);
+          setLoading(false);
+        },
+        (err) => {
+          console.error('Lỗi realtime dữ liệu bạn bè:', err);
+          setError('Không tải được dữ liệu bạn bè. Vui lòng thử lại.');
+          setLoading(false);
+        }
+      );
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user]);
 
   const knownUids = useMemo(
     () =>

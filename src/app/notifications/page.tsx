@@ -9,6 +9,7 @@ import {
   fetchNotificationsPage,
   markAllNotificationsRead,
   markNotificationRead,
+  subscribeRecentNotifications,
 } from '@/lib/data/notifications';
 import { fetchProfilesByUids } from '@/lib/data/users';
 import { fetchSpotById } from '@/lib/data/spots';
@@ -109,6 +110,34 @@ export default function NotificationsPage() {
     // loadPage đặt loading ngay; chạy ở microtask để không setState đồng bộ trong effect.
     if (user) queueMicrotask(() => loadPage(true));
   }, [user, loadPage]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    let unsubscribe: () => void = () => undefined;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      unsubscribe = subscribeRecentNotifications(
+        user.uid,
+        pageSize,
+        (recent) => {
+          void enrich(recent).then((enriched) => {
+            if (cancelled) return;
+            setItems((previous) => {
+              const recentIds = new Set(enriched.map((item) => item.id));
+              const older = previous.filter((item) => !recentIds.has(item.id));
+              return [...enriched, ...older];
+            });
+          });
+        },
+        (error) => console.error('Lỗi realtime thông báo:', error)
+      );
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user, pageSize, enrich]);
 
   const markReadLocally = (id: string) => {
     setItems((previous) =>

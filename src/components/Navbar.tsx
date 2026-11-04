@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/features/auth/AuthContext';
-import { fetchUnreadNotificationCount } from '@/lib/data/notifications';
+import { subscribeUnreadNotificationCount } from '@/lib/data/notifications';
+import { subscribeFriendLists } from '@/lib/data/friends';
 import Avatar from './Avatar';
 import {
   Bell,
@@ -23,21 +24,25 @@ export default function Navbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [incomingFriendCount, setIncomingFriendCount] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
     if (!user) return;
-    fetchUnreadNotificationCount(user.uid)
-      .then((count) => {
-        if (!cancelled) setUnreadCount(count);
-      })
-      .catch(() => {
-        if (!cancelled) setUnreadCount(0);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user, pathname]);
+    return subscribeUnreadNotificationCount(
+      user.uid,
+      setUnreadCount,
+      (error) => console.error('Lỗi realtime số thông báo chưa đọc:', error)
+    );
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeFriendLists(
+      user.uid,
+      ({ incoming }) => setIncomingFriendCount(incoming.length),
+      (error) => console.error('Lỗi realtime lời mời kết bạn:', error)
+    );
+  }, [user]);
 
   const navLinks = [
     { href: '/', label: 'Bảng tin', icon: Compass },
@@ -85,6 +90,11 @@ export default function Navbar() {
               >
                 <Icon className={`w-4 h-4 ${active ? 'text-orange-600' : 'text-stone-600'}`} />
                 {link.label}
+                {link.href === '/friends' && incomingFriendCount > 0 && (
+                  <span className="min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    {incomingFriendCount > 9 ? '9+' : incomingFriendCount}
+                  </span>
+                )}
               </Link>
             );
           })}

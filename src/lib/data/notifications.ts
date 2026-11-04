@@ -3,12 +3,14 @@ import {
   doc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   startAfter,
   updateDoc,
   where,
   writeBatch,
+  Unsubscribe,
   DocumentSnapshot,
   getCountFromServer,
 } from 'firebase/firestore';
@@ -99,4 +101,47 @@ export async function fetchUnreadNotificationCount(uid: string): Promise<number>
   } catch {
     return 0;
   }
+}
+
+export function subscribeUnreadNotificationCount(
+  uid: string,
+  onCount: (count: number) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, `users/${uid}/notifications`), where('isRead', '==', false)),
+    (snap) => onCount(snap.size),
+    (error) => onError(error)
+  );
+}
+
+export function subscribeRecentNotifications(
+  uid: string,
+  pageSize: number,
+  onItems: (items: AppNotification[]) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(
+      collection(db, `users/${uid}/notifications`),
+      orderBy('createdAt', 'desc'),
+      limit(pageSize)
+    ),
+    (snap) => {
+      onItems(
+        snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            type: data.type as AppNotification['type'],
+            actorId: data.actorId as string,
+            targetId: data.targetId as string,
+            isRead: Boolean(data.isRead),
+            createdAt: data.createdAt as AppNotification['createdAt'],
+          };
+        })
+      );
+    },
+    (error) => onError(error)
+  );
 }

@@ -4,11 +4,13 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   startAt,
   endAt,
   where,
+  Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../firebase/client';
 import { authedFetch, readApiError } from './api';
@@ -141,6 +143,112 @@ export async function fetchOutgoingRequests(
         : null,
     };
   });
+}
+
+export function subscribeFriendLists(
+  uid: string,
+  onData: (data: {
+    friends: FriendEntry[];
+    incoming: FriendRequestEntry[];
+    outgoing: FriendRequestEntry[];
+  }) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  let friends: FriendEntry[] = [];
+  let incoming: Friendship[] = [];
+  let outgoing: Friendship[] = [];
+  let pendingProfiles = 0;
+
+  const publish = async () => {
+    pendingProfiles += 1;
+    const version = pendingProfiles;
+    try {
+      const profileUids = [
+        ...friends.map((friend) => friend.uid),
+        ...incoming.map((friendship) => friendship.senderId),
+        ...outgoing.map((friendship) => friendship.receiverId),
+      ];
+      const profiles = await fetchProfilesByUids(profileUids);
+      if (version !== pendingProfiles) return;
+
+      onData({
+        friends: friends.map((friend) => ({
+          ...friend,
+          displayName: profiles.get(friend.uid)?.displayName || friend.displayName,
+          avatarPath: profiles.get(friend.uid)?.avatarPath || friend.avatarPath,
+        })),
+        incoming: incoming.map((friendship) => ({
+          pairId: friendship.pairId,
+          senderId: friendship.senderId,
+          receiverId: friendship.receiverId,
+          createdAt: friendship.createdAt,
+          profile: profiles.get(friendship.senderId)
+            ? {
+                uid: friendship.senderId,
+                displayName: profiles.get(friendship.senderId)!.displayName,
+                avatarPath: profiles.get(friendship.senderId)!.avatarPath,
+              }
+            : null,
+        })),
+        outgoing: outgoing.map((friendship) => ({
+          pairId: friendship.pairId,
+          senderId: friendship.senderId,
+          receiverId: friendship.receiverId,
+          createdAt: friendship.createdAt,
+          profile: profiles.get(friendship.receiverId)
+            ? {
+                uid: friendship.receiverId,
+                displayName: profiles.get(friendship.receiverId)!.displayName,
+                avatarPath: profiles.get(friendship.receiverId)!.avatarPath,
+              }
+            : null,
+        })),
+      });
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error('Không tải được hồ sơ bạn bè'));
+    }
+  };
+
+  const unsubscribers = [
+    onSnapshot(
+      collection(db, `users/${uid}/friends`),
+      (snap) => {
+        friends = snap.docs.map((d) => ({
+          uid: d.id,
+          displayName: 'Thành viên',
+          avatarPath: null,
+          acceptedAt: d.data().acceptedAt as Friendship['createdAt'],
+        }));
+        void publish();
+      },
+      onError
+    ),
+    onSnapshot(
+      query(collection(db, 'friendships'), where('receiverId', '==', uid)),
+      (snap) => {
+        incoming = snap.docs
+          .map((d) => mapFriendship(d.id, d.data()))
+          .filter((friendship) => friendship.status === 'pending');
+        void publish();
+      },
+      onError
+    ),
+    onSnapshot(
+      query(collection(db, 'friendships'), where('senderId', '==', uid)),
+      (snap) => {
+        outgoing = snap.docs
+          .map((d) => mapFriendship(d.id, d.data()))
+          .filter((friendship) => friendship.status === 'pending');
+        void publish();
+      },
+      onError
+    ),
+  ];
+
+  return () => {
+    pendingProfiles += 1;
+    unsubscribers.forEach((unsubscribe) => unsubscribe());
+  };
 }
 
 export interface FriendActionResult {

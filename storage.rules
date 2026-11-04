@@ -14,18 +14,14 @@ service firebase.storage {
       return request.resource.size <= 5 * 1024 * 1024;
     }
 
-    function spotPath() {
-      return /databases/(default)/documents/spots/$(spotId);
-    }
-
     function spotIsReadableByViewer(authorUid) {
-      return firestore.exists(spotPath())
-        && firestore.get(spotPath()).data.authorId == authorUid
-        && firestore.get(spotPath()).data.status != 'deleting'
+      return firestore.exists(/databases/(default)/documents/spots/$(spotId))
+        && firestore.get(/databases/(default)/documents/spots/$(spotId)).data.authorId == authorUid
+        && firestore.get(/databases/(default)/documents/spots/$(spotId)).data.get('status', 'active') != 'deleting'
         && (
-          firestore.get(spotPath()).data.visibility == 'public' ||
+          firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'public' ||
           (
-            firestore.get(spotPath()).data.visibility == 'friends' &&
+            firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'friends' &&
             firestore.exists(/databases/(default)/documents/users/$(authorUid)/friends/$(request.auth.uid))
           )
         );
