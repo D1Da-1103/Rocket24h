@@ -14,14 +14,14 @@ service firebase.storage {
       return request.resource.size <= 5 * 1024 * 1024;
     }
 
-    function spotIsReadableByViewer(authorUid) {
-      return firestore.exists(/databases/(default)/documents/spots/$(spotId))
-        && firestore.get(/databases/(default)/documents/spots/$(spotId)).data.authorId == authorUid
-        && firestore.get(/databases/(default)/documents/spots/$(spotId)).data.get('status', 'active') != 'deleting'
+    function spotIsReadableByViewer(authorUid, spotDocumentId) {
+      return firestore.exists(/databases/(default)/documents/spots/$(spotDocumentId))
+        && firestore.get(/databases/(default)/documents/spots/$(spotDocumentId)).data.authorId == authorUid
+        && firestore.get(/databases/(default)/documents/spots/$(spotDocumentId)).data.get('status', 'active') != 'deleting'
         && (
-          firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'public' ||
+          firestore.get(/databases/(default)/documents/spots/$(spotDocumentId)).data.visibility == 'public' ||
           (
-            firestore.get(/databases/(default)/documents/spots/$(spotId)).data.visibility == 'friends' &&
+            firestore.get(/databases/(default)/documents/spots/$(spotDocumentId)).data.visibility == 'friends' &&
             firestore.exists(/databases/(default)/documents/users/$(authorUid)/friends/$(request.auth.uid))
           )
         );
@@ -33,7 +33,7 @@ service firebase.storage {
     match /spots/{authorUid}/{spotId}/{filename} {
       allow read: if isAuthenticated() && (
         request.auth.uid == authorUid ||
-        spotIsReadableByViewer(authorUid)
+        spotIsReadableByViewer(authorUid, spotId)
       );
 
       // Chỉ tác giả được tải ảnh vào đúng thư mục Spot của mình.

@@ -1,0 +1,157 @@
+{
+  "planHash": "1bec10d0fa2ff4a12cf17117c2bb66bf1499d08b312d6446a44480bfeba57e90",
+  "phase": "standalone",
+  "recordedAtUtc": "2026-11-04T20:24:42.2464852Z",
+  "retryCount": 0,
+  "resetBaseline": false,
+  "complete": true,
+  "result": {
+    "setupSucceeded": true,
+    "setupDurationMs": 0,
+    "setupFailureOutput": null,
+    "assertions": [
+      {
+        "name": "typecheck",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "npm warn Unknown env config \u0022scripts-prepend-node-path\u0022. This will stop working in the next major version of npm.\r\n\r\n\u003E rocket24h@0.1.0 typecheck\r\n\u003E tsc --noEmit\r\n\r\n",
+        "durationMs": 2352
+      },
+      {
+        "name": "tests-pass",
+        "kind": "process",
+        "verificationMethod": "test-results",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "npm warn Unknown env config \u0022scripts-prepend-node-path\u0022. This will stop working in the next major version of npm.\r\n\r\n\u003E rocket24h@0.1.0 test\r\n\u003E vitest run tests/unit\r\n\r\n\r\n RUN  v5.0.5 D:/Viet Dat/ChuyendeCNTT/Rocket24h\r\n\r\n\r\n Test Files  5 passed (5)\r\n      Tests  38 passed (38)\r\n   Start at  03:24:41\r\n   Duration  308ms (import 78%, transform 10%, tests 6%, worker 6%)\r\n\r\n",
+        "durationMs": 1189,
+        "testResults": {
+          "testFramework": "vitest",
+          "runnerDetectedFrom": "package_json",
+          "testsTotal": 38,
+          "testsPassed": 38,
+          "testsFailed": 0,
+          "testsSkipped": 0,
+          "parseFailed": false
+        }
+      },
+      {
+        "name": "dev-server-serves-home",
+        "kind": "http-probe",
+        "verificationMethod": "http-status",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": null,
+        "outputSample": "HTTP 200\n\u003C!DOCTYPE html\u003E\u003Chtml lang=\u0022vi\u0022 class=\u0022h-full\u0022\u003E\u003Chead\u003E\u003Cmeta charSet=\u0022utf-8\u0022/\u003E\u003Cmeta name=\u0022viewport\u0022 content=\u0022width=device-width, initial-scale=1\u0022/\u003E\u003Clink rel=\u0022stylesheet\u0022 href=\u0022/_next/static/chunks/%5Broot-of-the-server%5D__1bjl8nunwbotn._.css\u0022 data-precedence=\u0022next_static/chunks/[root-of-the-server]__1bjl8nunwbotn._.css\u0022/\u003E\u003Clink rel=\u0022preload\u0022 as=\u0022script\u0022 fetchPriority=\u0022low\u0022 href=\u0022/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_03l4kld1mrwfx._.js\u0022/\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_dist_compiled_next-devtools_index_090k2jmam7qwg.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/1daa_next_dist_compiled_react-dom_cjs_react-dom-client_development_0mp0cp_t-ezj9.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/1q96_modules_next_dist_compiled_react-dom_cjs_react-dom_development_1sqry0_53krp4.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_dist_compiled_react-dom_0grqycjrj6mju._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_dist_compiled_react-server-dom-turbopack_164kp-67asdr9._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_dist_compiled_1amofcmz--cdp._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_dist_client_14zvornz047l2._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_dist_1bjkg68unqmjx._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_%40swc_helpers_cjs_1r9vbqwj2323d._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/_1anvha4rlo79g._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/turbopack-_00pkkjbg3g3xr._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/_219uq1sj0q91c._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/src_1hi2y27exym-p._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_0zmtnyeeqpz0g._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_%40firebase_auth_dist_esm_06iw_iauawkoy._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_re2js_build_index_10oziwle7cri1.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_%40firebase_firestore_dist_common-DE1gv9M5_esm_1_6f2rc-omf0p.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_%40firebase_firestore_dist_16byshng97w5w._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_%40firebase_storage_dist_index_esm_009qcw2t0v7t8.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_zod_v4_classic_04hcbly-7n3_1._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_zod_v4_core_14qn2mg1f8pkp._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_zod_v4_locales_1-ided7izgr--._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_0lo_nkqaf_nah._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/src_1qfa_iqbzxt7y._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_1fa2cs53l4pqe._.js\u0022 async=\u0022\u0022\u003E\u003C/script\u003E\u003Ctitle\u003ERocket24h - Nh\u1EADt K\u00FD Tr\u1EA3i Nghi\u1EC7m \u1EA8m Th\u1EF1c \u0026amp; Du L\u1ECBch\u003C/title\u003E\u003Cmeta name=\u0022description\u0022 content=\u0022Ghi l\u1EA1i nh\u1EEFng n\u01A1i \u0111\u00E3 gh\u00E9, chia s\u1EBB c\u00F3 ch\u1ECDn l\u1ECDc v\u1EDBi b\u1EA1n b\u00E8 v\u00E0 kh\u00E1m ph\u00E1 b\u1EA3n \u0111\u1ED3 tr\u1EA3i nghi\u1EC7m c\u00E1 nh\u00E2n.\u0022/\u003E\u003Clink rel=\u0022icon\u0022 href=\u0022/favicon.ico?favicon.117ezoe8m31dk.ico\u0022 sizes=\u002248x48\u0022 type=\u0022image/x-icon\u0022/\u003E\u003Cmeta name=\u0022next-size-adjust\u0022 content=\u0022\u0022/\u003E\u003Cscript src=\u0022/_next/static/chunks/node_modules_next_dist_build_polyfills_polyfill-nomodule.js\u0022 noModule=\u0022\u0022\u003E\u003C/script\u003E\u003C/head\u003E\u003Cbody class=\u0022inter_bcd142de-module__j05kcG__className min-h-full flex flex-col bg-stone-50 text-stone-900 antialiased\u0022\u003E\u003Cdiv hidden=\u0022\u0022\u003E\u003C!--$--\u003E\u003C!--/$--\u003E\u003C/div\u003E\u003C!--$--\u003E\u003Cheader class=\u0022sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-stone-200\u0022\u003E\u003Cdiv class=\u0022max-w-6xl mx-auto px-4 h-16 flex items-center justify-between\u0022\u003E\u003Ca class=\u0022flex items-center gap-2 group\u0022 href=\u0022/\u0022\u003E\u003Cdiv class=\u0022w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform\u0022\u003E\u003Csvg xmlns=\u0022ht\n\u2026[truncated]",
+        "durationMs": 47
+      }
+    ],
+    "executions": [
+      {
+        "source": "devServer",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "args": [
+          "run",
+          "dev"
+        ],
+        "cwd": "D:\\Viet Dat\\ChuyendeCNTT\\Rocket24h",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32",
+        "nodeExecutable": "C:\\Program Files\\nodejs\\node.EXE",
+        "nodeVersion": "v24.13.0",
+        "packageManager": "npm",
+        "packageManagerExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "packageManagerVersion": "11.6.2",
+        "cleanup": {
+          "RootProcessId": 28964,
+          "Completed": true,
+          "ProcessesObserved": 17,
+          "ProcessesTerminated": 0,
+          "Failure": null
+        }
+      },
+      {
+        "source": "typecheck",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "args": [
+          "run",
+          "typecheck"
+        ],
+        "cwd": "D:\\Viet Dat\\ChuyendeCNTT\\Rocket24h",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32",
+        "nodeExecutable": "C:\\Program Files\\nodejs\\node.EXE",
+        "nodeVersion": "v24.13.0",
+        "packageManager": "npm",
+        "packageManagerExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "packageManagerVersion": "11.6.2",
+        "cleanup": {
+          "RootProcessId": 32148,
+          "Completed": true,
+          "ProcessesObserved": 7,
+          "ProcessesTerminated": 0,
+          "Failure": null
+        }
+      },
+      {
+        "source": "tests-pass",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "args": [
+          "test"
+        ],
+        "cwd": "D:\\Viet Dat\\ChuyendeCNTT\\Rocket24h",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32",
+        "nodeExecutable": "C:\\Program Files\\nodejs\\node.EXE",
+        "nodeVersion": "v24.13.0",
+        "packageManager": "npm",
+        "packageManagerExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "packageManagerVersion": "11.6.2",
+        "cleanup": {
+          "RootProcessId": 29396,
+          "Completed": true,
+          "ProcessesObserved": 15,
+          "ProcessesTerminated": 1,
+          "Failure": null
+        }
+      },
+      {
+        "source": "dev-server-serves-home",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "args": [
+          "run",
+          "dev"
+        ],
+        "cwd": "D:\\Viet Dat\\ChuyendeCNTT\\Rocket24h",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32",
+        "nodeExecutable": "C:\\Program Files\\nodejs\\node.EXE",
+        "nodeVersion": "v24.13.0",
+        "packageManager": "npm",
+        "packageManagerExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+        "packageManagerVersion": "11.6.2",
+        "cleanup": {
+          "RootProcessId": 30436,
+          "Completed": true,
+          "ProcessesObserved": 3,
+          "ProcessesTerminated": 3,
+          "Failure": null
+        }
+      }
+    ]
+  }
+}
