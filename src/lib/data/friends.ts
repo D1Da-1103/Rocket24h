@@ -31,28 +31,45 @@ export interface FriendRequestEntry {
 }
 
 /**
- * Danh sách bạn bè từ bảng tra cứu server-only users/{uid}/friends.
+ * Danh sách bạn bè từ các quan hệ mà người dùng tham gia.
  */
 export async function fetchFriends(uid: string): Promise<FriendEntry[]> {
-  const snap = await getDocs(collection(db, `users/${uid}/friends`));
-  const friendUids = snap.docs.map((d) => d.id);
+  const [sentSnap, receivedSnap] = await Promise.all([
+    getDocs(query(collection(db, 'friendships'), where('senderId', '==', uid))),
+    getDocs(query(collection(db, 'friendships'), where('receiverId', '==', uid))),
+  ]);
+  const accepted = [...sentSnap.docs, ...receivedSnap.docs]
+    .map((d) => mapFriendship(d.id, d.data()))
+    .filter((friendship) => friendship.status === 'accepted');
+  const friendUids = accepted.map((friendship) =>
+    friendship.senderId === uid ? friendship.receiverId : friendship.senderId
+  );
   const profiles = await fetchProfilesByUids(friendUids);
 
-  return snap.docs.map((d) => {
-    const data = d.data();
-    const profile = profiles.get(d.id);
+  return accepted.map((friendship) => {
+    const friendUid =
+      friendship.senderId === uid ? friendship.receiverId : friendship.senderId;
+    const profile = profiles.get(friendUid);
     return {
-      uid: d.id,
+      uid: friendUid,
       displayName: profile?.displayName || 'Thành viên',
       avatarPath: profile?.avatarPath || null,
-      acceptedAt: data.acceptedAt as Friendship['createdAt'],
+      acceptedAt: friendship.updatedAt,
     };
   });
 }
 
 export async function fetchFriendUids(uid: string): Promise<string[]> {
-  const snap = await getDocs(collection(db, `users/${uid}/friends`));
-  return snap.docs.map((d) => d.id);
+  const [sentSnap, receivedSnap] = await Promise.all([
+    getDocs(query(collection(db, 'friendships'), where('senderId', '==', uid))),
+    getDocs(query(collection(db, 'friendships'), where('receiverId', '==', uid))),
+  ]);
+  return [...sentSnap.docs, ...receivedSnap.docs]
+    .map((d) => mapFriendship(d.id, d.data()))
+    .filter((friendship) => friendship.status === 'accepted')
+    .map((friendship) =>
+      friendship.senderId === uid ? friendship.receiverId : friendship.senderId
+    );
 }
 
 function mapFriendship(id: string, data: Record<string, unknown>): Friendship {
@@ -154,7 +171,6 @@ export function subscribeFriendLists(
   }) => void,
   onError: (error: Error) => void
 ): Unsubscribe {
-  let friends: FriendEntry[] = [];
   let incoming: Friendship[] = [];
   let outgoing: Friendship[] = [];
   let pendingProfiles = 0;
@@ -164,7 +180,6 @@ export function subscribeFriendLists(
     const version = pendingProfiles;
     try {
       const profileUids = [
-        ...friends.map((friend) => friend.uid),
         ...incoming.map((friendship) => friendship.senderId),
         ...outgoing.map((friendship) => friendship.receiverId),
       ];
@@ -172,12 +187,24 @@ export function subscribeFriendLists(
       if (version !== pendingProfiles) return;
 
       onData({
-        friends: friends.map((friend) => ({
-          ...friend,
-          displayName: profiles.get(friend.uid)?.displayName || friend.displayName,
-          avatarPath: profiles.get(friend.uid)?.avatarPath || friend.avatarPath,
-        })),
-        incoming: incoming.map((friendship) => ({
+        friends: [...incoming, ...outgoing]
+          .filter((friendship) => friendship.status === 'accepted')
+          .map((friendship) => {
+            const friendUid =
+              friendship.senderId === uid
+                ? friendship.receiverId
+                : friendship.senderId;
+            const profile = profiles.get(friendUid);
+            return {
+              uid: friendUid,
+              displayName: profile?.displayName || 'Thành viên',
+              avatarPath: profile?.avatarPath || null,
+              acceptedAt: friendship.updatedAt,
+            };
+          }),
+        incoming: incoming
+          .filter((friendship) => friendship.status === 'pending')
+          .map((friendship) => ({
           pairId: friendship.pairId,
           senderId: friendship.senderId,
           receiverId: friendship.receiverId,
@@ -189,8 +216,10 @@ export function subscribeFriendLists(
                 avatarPath: profiles.get(friendship.senderId)!.avatarPath,
               }
             : null,
-        })),
-        outgoing: outgoing.map((friendship) => ({
+          })),
+        outgoing: outgoing
+          .filter((friendship) => friendship.status === 'pending')
+          .map((friendship) => ({
           pairId: friendship.pairId,
           senderId: friendship.senderId,
           receiverId: friendship.receiverId,
@@ -202,7 +231,7 @@ export function subscribeFriendLists(
                 avatarPath: profiles.get(friendship.receiverId)!.avatarPath,
               }
             : null,
-        })),
+          })),
       });
     } catch (error) {
       onError(error instanceof Error ? error : new Error('Không tải được hồ sơ bạn bè'));
@@ -211,24 +240,9 @@ export function subscribeFriendLists(
 
   const unsubscribers = [
     onSnapshot(
-      collection(db, `users/${uid}/friends`),
-      (snap) => {
-        friends = snap.docs.map((d) => ({
-          uid: d.id,
-          displayName: 'Thành viên',
-          avatarPath: null,
-          acceptedAt: d.data().acceptedAt as Friendship['createdAt'],
-        }));
-        void publish();
-      },
-      onError
-    ),
-    onSnapshot(
       query(collection(db, 'friendships'), where('receiverId', '==', uid)),
       (snap) => {
-        incoming = snap.docs
-          .map((d) => mapFriendship(d.id, d.data()))
-          .filter((friendship) => friendship.status === 'pending');
+        incoming = snap.docs.map((d) => mapFriendship(d.id, d.data()));
         void publish();
       },
       onError
@@ -236,9 +250,7 @@ export function subscribeFriendLists(
     onSnapshot(
       query(collection(db, 'friendships'), where('senderId', '==', uid)),
       (snap) => {
-        outgoing = snap.docs
-          .map((d) => mapFriendship(d.id, d.data()))
-          .filter((friendship) => friendship.status === 'pending');
+        outgoing = snap.docs.map((d) => mapFriendship(d.id, d.data()));
         void publish();
       },
       onError

@@ -5,18 +5,20 @@
 > **Công nghệ**: Next.js (App Router, TypeScript strict), Firebase (Auth, Firestore, Storage, Emulators), Leaflet, Geofire-common, Tailwind CSS.
 
 ---
+
 ## 📌 0. Các bước khởi tạo dự án
+
 Terminal 1 — Cài đặt package và chạy Firebase:
-    npm ci
-    copy .env.example .env.local
-    npm install -g firebase-tools
-    npm run emulators
+npm ci
+copy .env.example .env.local
+npm install -g firebase-tools
+npm run emulators
 Terminal 2 — Nạp dữ liệu mẫu:
-    cd /d D:\D1DaAPP\ChuyendeCNTT\Rocket24h
-    npm run seed
+cd /d D:\D1DaAPP\ChuyendeCNTT\Rocket24h
+npm run seed
 Terminal 3 — Chạy ứng dụng:
-    cd /d D:\D1DaAPP\ChuyendeCNTT\Rocket24h
-    npm run dev
+cd /d D:\D1DaAPP\ChuyendeCNTT\Rocket24h
+npm run dev
 Ứng dụng: localhost:3000
 Firebase Emulator: localhost:4000
 
@@ -25,6 +27,7 @@ Firebase Emulator: localhost:4000
 Rocket24h là ứng dụng web cho phép người dùng ghi lại nhật ký trải nghiệm thực tế tại các địa điểm (quán ăn, cà phê, du lịch...) kèm hình ảnh, mức giá tham khảo, đánh giá và cảm nhận. Người dùng có thể chia sẻ có chọn lọc với bạn bè và tra cứu lại trên bản đồ cá nhân.
 
 ### Hai thực thể cốt lõi:
+
 - **Place**: Danh tính ổn định của địa điểm (Tên, địa chỉ, tọa độ WGS84, Geohash, danh mục). Có thể là **Dùng chung (Shared)** hoặc **Riêng tư (Private)**.
 - **Spot**: Một lần ghé trải nghiệm tại một Place (ảnh, giá, đánh giá, chú thích, thời điểm ghé, phạm vi hiển thị `public` / `friends` / `private` và chế độ chia sẻ vị trí `exact` / `hidden`).
 
@@ -41,38 +44,50 @@ Rocket24h là ứng dụng web cho phép người dùng ghi lại nhật ký tr�
 ## 🚀 3. Hướng dẫn Khởi chạy Nhanh
 
 ### Bước 1: Cài đặt thư viện phụ thuộc
+
 ```bash
 npm install
 ```
 
 ### Bước 2: Thiết lập biến môi trường
+
 File `.env.local` đã được cấu hình sẵn cho Firebase Local Emulator:
+
 ```bash
 cp .env.example .env.local
 ```
 
 ### Bước 3: Khởi động Firebase Local Emulators (Auth, Firestore, Storage)
+
 Mở một cửa sổ dòng lệnh riêng:
+
 ```bash
 npm run emulators
 ```
-*Giao diện Emulator UI sẽ mở tại*: [http://localhost:4000](http://localhost:4000)
+
+_Giao diện Emulator UI sẽ mở tại_: [http://localhost:4000](http://localhost:4000)
 
 ### Bước 4: Nạp dữ liệu mẫu (Seed Data)
+
 Tại một cửa sổ dòng lệnh khác, chạy:
+
 ```bash
 npm run seed
 ```
+
 Lệnh này sẽ tự động tạo:
+
 - **3 người dùng mẫu** có hồ sơ và cài đặt đầy đủ.
 - **Quan hệ bạn bè mẫu** giữa Alice và Bob.
 - **10 địa điểm nổi tiếng** tại khu vực trung tâm Hà Nội kèm Geohash chuẩn WGS84.
 - **10 bài viết Spot mẫu** trải đều các phạm vi `public`, `friends`, `private` và chế độ ẩn vị trí.
 
 ### Bước 5: Chạy ứng dụng giao diện Next.js
+
 ```bash
 npm run dev
 ```
+
 Truy cập ứng dụng tại: [http://localhost:3000](http://localhost:3000)
 
 ### Dọn media tạm
@@ -98,11 +113,11 @@ Lệnh chỉ xóa media tạm/orphan cũ hơn 24 giờ (có thể đổi bằng 
 
 ## 🔑 4. Danh sách Tài khoản Demo (Seed Accounts)
 
-| Tên hiển thị | Email | Mật khẩu | Vai trò / Quan hệ |
-|---|---|---|---|
-| **Alice Hoàng** | `demo_user1@rocket24h.vn` | `Password123!` | Bạn của Bob, có các bài viết đủ 3 phạm vi & bài ẩn vị trí |
-| **Bob Nguyễn** | `demo_user2@rocket24h.vn` | `Password123!` | Bạn của Alice, xem được Spot `friends` của Alice |
-| **Charlie Đặng** | `demo_user3@rocket24h.vn` | `Password123!` | Thành viên mới (chưa kết bạn với Alice & Bob) |
+| Tên hiển thị     | Email                     | Mật khẩu       | Vai trò / Quan hệ                                         |
+| ---------------- | ------------------------- | -------------- | --------------------------------------------------------- |
+| **Alice Hoàng**  | `demo_user1@rocket24h.vn` | `Password123!` | Bạn của Bob, có các bài viết đủ 3 phạm vi & bài ẩn vị trí |
+| **Bob Nguyễn**   | `demo_user2@rocket24h.vn` | `Password123!` | Bạn của Alice, xem được Spot `friends` của Alice          |
+| **Charlie Đặng** | `demo_user3@rocket24h.vn` | `Password123!` | Thành viên mới (chưa kết bạn với Alice & Bob)             |
 
 ---
 
